@@ -126,6 +126,19 @@ test("returns aggregated manager dashboard data", async () => {
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual(
-    expect.objectContaining({ countries: [], totalSubscriptions: 0 }),
+    expect.objectContaining({ countries: [], products: [], totalSubscriptions: 0 }),
   );
+});
+
+test("returns protected subscriber details for a SKU", async () => {
+  const response = await request(app)
+    .get("/api/manager/subscription-details?sku=TS2811-B&country=DE")
+    .auth("manager", "secret");
+
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({
+    sku: "TS2811-B",
+    totalSubscriptions: 0,
+    sites: [],
+  });
 });

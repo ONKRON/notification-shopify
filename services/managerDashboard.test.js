@@ -5,14 +5,17 @@ jest.mock("../models/Subscription", () => ({ findAll: mockFindAll }));
 
 const axios = require("axios");
 const {
+  buildCrossCountryProducts,
   clearProductCatalogCache,
   getManagerDashboardData,
+  getProductSubscriptionDetails,
   groupSubscriptionRows,
 } = require("./managerDashboard");
 
 const envNames = [
   "SHOPIFY_DE_STORE",
   "SHOPIFY_DE_ACCESS_TOKEN",
+  "SHOPIFY_DE_PUBLIC_URL",
   "SHOPIFY_API_VERSION",
 ];
 const originalEnv = Object.fromEntries(
@@ -25,6 +28,7 @@ beforeEach(() => {
   axios.get.mockReset();
   process.env.SHOPIFY_DE_STORE = "de-store.myshopify.com";
   process.env.SHOPIFY_DE_ACCESS_TOKEN = "token";
+  process.env.SHOPIFY_DE_PUBLIC_URL = "https://onkron.de";
   process.env.SHOPIFY_API_VERSION = "2025-10";
 });
 
@@ -54,6 +58,44 @@ test("groups SKU rows into products and totals their subscriptions", () => {
   ]);
 });
 
+test("combines the same SKU from different countries into one product", () => {
+  const products = buildCrossCountryProducts([
+    {
+      code: "DE",
+      products: [{
+        productId: "100",
+        title: "TV Stand",
+        imageUrl: "de.jpg",
+        productUrl: "https://onkron.de/products/tv-stand",
+        catalogStatus: "available",
+        skus: [{ sku: "TS100", subscriptions: 3 }],
+      }],
+    },
+    {
+      code: "US",
+      products: [{
+        productId: "200",
+        title: "TV Stand",
+        imageUrl: "us.jpg",
+        productUrl: "https://onkron.us/products/tv-stand",
+        catalogStatus: "available",
+        skus: [{ sku: "TS100", subscriptions: 2 }],
+      }],
+    },
+  ]);
+
+  expect(products).toEqual([
+    expect.objectContaining({
+      sku: "TS100",
+      totalSubscriptions: 5,
+      sites: [
+        expect.objectContaining({ country: "DE", subscriptions: 3 }),
+        expect.objectContaining({ country: "US", subscriptions: 2 }),
+      ],
+    }),
+  ]);
+});
+
 test("enriches each unique product with its Shopify title and image", async () => {
   mockFindAll.mockResolvedValue([
     { country: "DE", inventory_id: "100", sku: "BLACK", subscription_count: "3" },
@@ -63,6 +105,7 @@ test("enriches each unique product with its Shopify title and image", async () =
     data: {
       product: {
         title: "ONKRON Stand",
+        handle: "onkron-stand",
         image: { src: "https://cdn.example.com/stand.jpg" },
       },
     },
@@ -82,6 +125,7 @@ test("enriches each unique product with its Shopify title and image", async () =
             expect.objectContaining({
               title: "ONKRON Stand",
               imageUrl: "https://cdn.example.com/stand.jpg",
+              productUrl: "https://onkron.de/products/onkron-stand",
               totalSubscriptions: 5,
             }),
           ],
@@ -107,4 +151,53 @@ test("keeps the product visible when Shopify credentials are unavailable", async
       catalogStatus: "unavailable",
     }),
   );
+});
+
+test("returns subscriber details for a product and selected country", async () => {
+  mockFindAll.mockResolvedValue([
+    {
+      id: 1,
+      nickname: "Anna",
+      email: "anna@example.com",
+      sku: "BLACK",
+      inventory_id: "100",
+      country: "DE",
+      createdAt: "2026-08-04T10:00:00.000Z",
+    },
+  ]);
+  axios.get.mockResolvedValue({
+    data: {
+      product: {
+        title: "ONKRON Stand",
+        handle: "onkron-stand",
+        image: { src: "https://cdn.example.com/stand.jpg" },
+      },
+    },
+  });
+
+  const details = await getProductSubscriptionDetails("BLACK", "DE");
+
+  expect(mockFindAll).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { notification_sent: false, sku: "BLACK", country: "DE" },
+    }),
+  );
+  expect(details).toEqual({
+    sku: "BLACK",
+    totalSubscriptions: 1,
+    sites: [
+      expect.objectContaining({
+        country: "DE",
+        productUrl: "https://onkron.de/products/onkron-stand",
+        subscribers: [
+          {
+            id: 1,
+            nickname: "Anna",
+            email: "anna@example.com",
+            subscribedAt: "2026-08-04T10:00:00.000Z",
+          },
+        ],
+      }),
+    ],
+  });
 });

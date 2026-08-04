@@ -23,9 +23,11 @@ function clearProductCatalogCache() {
 function fallbackProduct(product, error) {
   return {
     ...product,
-    title: product.skus[0] ? `SKU ${product.skus[0].sku}` : `Product ${product.productId}`,
+    title: product.skus[0]
+      ? `SKU ${product.skus[0].sku}`
+      : `Product ${product.productId}`,
     imageUrl: null,
-    shopifyUrl: null,
+    productUrl: null,
     catalogStatus: "unavailable",
     catalogError: error ? error.message : "Shopify configuration is unavailable",
   };
@@ -65,7 +67,10 @@ async function fetchProductDetails(product) {
       title: shopifyProduct.title || `Product ${product.productId}`,
       imageUrl:
         shopifyProduct.image?.src || shopifyProduct.images?.[0]?.src || null,
-      shopifyUrl: `https://${shopifyConfig.shopifyStore}/admin/products/${product.productId}`,
+      productUrl:
+        shopifyConfig.shopifyPublicUrl && shopifyProduct.handle
+          ? `${shopifyConfig.shopifyPublicUrl}/products/${encodeURIComponent(shopifyProduct.handle)}`
+          : null,
       catalogStatus: "available",
       catalogError: null,
     };
@@ -134,6 +139,116 @@ function groupSubscriptionRows(rows) {
   return [...productsByKey.values()];
 }
 
+function buildCrossCountryProducts(countries) {
+  const productsBySku = new Map();
+
+  for (const country of countries) {
+    for (const product of country.products) {
+      for (const skuItem of product.skus) {
+        const sku = String(skuItem.sku || "Без SKU");
+        let sharedProduct = productsBySku.get(sku);
+
+        if (!sharedProduct) {
+          sharedProduct = {
+            sku,
+            title: product.title || `SKU ${sku}`,
+            imageUrl: product.imageUrl || null,
+            totalSubscriptions: 0,
+            sites: [],
+          };
+          productsBySku.set(sku, sharedProduct);
+        }
+
+        if (
+          product.catalogStatus === "available" &&
+          !sharedProduct.sites.some((site) => site.catalogStatus === "available")
+        ) {
+          sharedProduct.title = product.title || `SKU ${sku}`;
+          sharedProduct.imageUrl = product.imageUrl || null;
+        }
+
+        sharedProduct.totalSubscriptions += skuItem.subscriptions;
+        sharedProduct.sites.push({
+          country: country.code,
+          subscriptions: skuItem.subscriptions,
+          productId: product.productId,
+          title: product.title || `SKU ${sku}`,
+          imageUrl: product.imageUrl || null,
+          productUrl: product.productUrl,
+          catalogStatus: product.catalogStatus,
+        });
+      }
+    }
+  }
+
+  return [...productsBySku.values()]
+    .map((product) => ({
+      ...product,
+      sites: product.sites.sort((a, b) => a.country.localeCompare(b.country)),
+    }))
+    .sort((a, b) => b.totalSubscriptions - a.totalSubscriptions);
+}
+
+async function getProductSubscriptionDetails(sku, country) {
+  const where = { notification_sent: false, sku };
+  if (country) where.country = country;
+
+  const rows = await Subscription.findAll({
+    attributes: [
+      "id",
+      "nickname",
+      "email",
+      "sku",
+      "inventory_id",
+      "country",
+      "createdAt",
+    ],
+    where,
+    order: [["createdAt", "DESC"]],
+    raw: true,
+  });
+  const groupsBySite = new Map();
+
+  for (const row of rows) {
+    const normalizedCountry = String(row.country || "").toUpperCase();
+    const productId = String(row.inventory_id || "");
+    const key = `${normalizedCountry}:${productId}`;
+    let group = groupsBySite.get(key);
+
+    if (!group) {
+      group = {
+        country: normalizedCountry,
+        productId,
+        totalSubscriptions: 0,
+        skus: [{ sku, subscriptions: 0 }],
+        subscribers: [],
+      };
+      groupsBySite.set(key, group);
+    }
+
+    group.totalSubscriptions += 1;
+    group.skus[0].subscriptions += 1;
+    group.subscribers.push({
+      id: row.id,
+      nickname: row.nickname,
+      email: row.email,
+      subscribedAt: row.createdAt,
+    });
+  }
+
+  const sites = await mapWithConcurrency(
+    [...groupsBySite.values()],
+    SHOPIFY_CONCURRENCY,
+    fetchProductDetails,
+  );
+
+  return {
+    sku,
+    totalSubscriptions: rows.length,
+    sites: sites.sort((a, b) => a.country.localeCompare(b.country)),
+  };
+}
+
 async function getManagerDashboardData() {
   const rows = await Subscription.findAll({
     attributes: [
@@ -176,9 +291,11 @@ async function getManagerDashboardData() {
       ),
     }))
     .sort((a, b) => a.code.localeCompare(b.code));
+  const sharedProducts = buildCrossCountryProducts(countries);
 
   return {
     countries,
+    products: sharedProducts,
     totalSubscriptions: countries.reduce(
       (total, country) => total + country.totalSubscriptions,
       0,
@@ -188,8 +305,10 @@ async function getManagerDashboardData() {
 }
 
 module.exports = {
+  buildCrossCountryProducts,
   clearProductCatalogCache,
   fetchProductDetails,
   getManagerDashboardData,
+  getProductSubscriptionDetails,
   groupSubscriptionRows,
 };

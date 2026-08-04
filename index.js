@@ -17,6 +17,7 @@ const { requireManagerAuth } = require("./middleware/managerAuth");
 const {
   clearProductCatalogCache,
   getManagerDashboardData,
+  getProductSubscriptionDetails,
 } = require("./services/managerDashboard");
 const { renderManagerDashboard } = require("./views/managerDashboard");
 const app = express();
@@ -144,6 +145,23 @@ app.get("/api/manager/subscriptions", requireManagerAuth, async (req, res) => {
     res.status(500).json({ message: "Failed to load subscription dashboard" });
   }
 });
+
+app.get(
+  "/api/manager/subscription-details",
+  requireManagerAuth,
+  async (req, res) => {
+    try {
+      const sku = String(req.query.sku || "").trim();
+      const country = String(req.query.country || "").trim().toUpperCase();
+      if (!sku) return res.status(400).json({ message: "SKU is required" });
+
+      res.json(await getProductSubscriptionDetails(sku, country || null));
+    } catch (error) {
+      console.error("Failed to load subscription details:", error.message);
+      res.status(500).json({ message: "Failed to load subscription details" });
+    }
+  },
+);
 
 app.post("/send-notification", async (req, res) => {
   const { email, sku, nickname, inventory_id, country } = req.body;

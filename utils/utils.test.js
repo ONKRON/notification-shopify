@@ -13,6 +13,7 @@ describe('getShopifyConfig', () => {
       shopifyStore: process.env.SHOPIFY_US_STORE,
       shopifyAccessToken: process.env.SHOPIFY_US_ACCESS_TOKEN,
       shopifyApiVersion: '2025-10',
+      shopifyPublicUrl: 'https://standmounts.myshopify.com',
     });
   });
 
