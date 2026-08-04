@@ -9,8 +9,10 @@ describe('getShopifyConfig', () => {
     const subscription = { country: 'US' };
     const config = getShopifyConfig('US', subscription);
     expect(config).toEqual({
+      country: 'US',
       shopifyStore: process.env.SHOPIFY_US_STORE,
-      accessToken: process.env.SHOPIFY_US_ACCESS_TOKEN,
+      shopifyAccessToken: process.env.SHOPIFY_US_ACCESS_TOKEN,
+      shopifyApiVersion: '2025-10',
     });
   });
 
@@ -42,7 +44,7 @@ describe('checkProductAvailability', () => {
       Promise.resolve({
         data: {
           product: {
-            variants: [{ inventory_quantity: 10 }],
+            variants: [{ sku: 'TS2811-B', inventory_quantity: 10 }],
           },
         },
       })
@@ -50,9 +52,6 @@ describe('checkProductAvailability', () => {
   
     // Выполняем проверку доступности
     await checkProductAvailability(mockSubscriptions, mockSendNotification, mockGetShopifyConfig);
-  
-    // Логируем все вызовы mock-функции
-    console.log(mockSendNotification.mock.calls);
   
     // Проверяем, что sendNotification был вызван с правильными параметрами
     expect(mockSendNotification).toHaveBeenCalledWith(
@@ -81,5 +80,3 @@ describe('checkProductAvailability', () => {
     expect(mockSendNotification).not.toHaveBeenCalled();
   });
 });
-
-

@@ -15,19 +15,24 @@
         "pg-hstore": "^2.3.4",
         "postmark": "^4.0.5",
         "resend": "^6.4.2",
-        "sequelize": "^6.37.3"
+        "sequelize": "^6.37.3",
+        "sequelize-cli": "^6.6.5"
     },
     "name": "notification-shopify",
     "version": "1.0.0",
     "description": "Server for subscribtion",
     "main": "index.js",
     "scripts": {
+        "prestart": "npm run db:migrate",
         "start": "concurrently \"node index.js\" \"node sender/sendNotification.js\"",
+        "db:migrate": "sequelize-cli db:migrate --config config/sequelize-cli.js --migrations-path migrations --env production",
+        "db:migrate:undo": "sequelize-cli db:migrate:undo --config config/sequelize-cli.js --migrations-path migrations --env production",
         "test": "jest"
     },
     "author": "",
     "license": "ISC",
     "devDependencies": {
-        "jest": "^29.7.0"
+        "jest": "^29.7.0",
+        "supertest": "^7.2.2"
     }
 }

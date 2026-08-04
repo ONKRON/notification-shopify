@@ -3,8 +3,26 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const { google } = require('googleapis');
 const cron = require("node-cron");
+const { Op } = require("sequelize");
 const sequelize = require("../config/database");
 const Subscription = require("../models/Subscription");
+const { getShopifyConfig } = require("../config/shopify");
+const {
+  getAvailabilityNotificationTemplate,
+} = require("../templates/availabilityNotification");
+const {
+  deliverProductSubscriptionNotification,
+  getMaxNotificationAttempts,
+} = require("../services/bitrix");
+const {
+  isSubscribedVariantAvailable,
+} = require("../utils/productAvailability");
+const {
+  deliverAvailabilityNotification,
+} = require("../services/subscriberNotification");
+const { createHealthReport } = require("../services/health");
+const { getCronConfig } = require("../config/runtime");
+const { maskEmail } = require("../utils/privacy");
 
 const app = express();
 const PORT = process.env.PORT_CHECKER || 5000;
@@ -24,7 +42,7 @@ oAuth2Client.setCredentials({
 // Функция для отправки email через Gmail API
 async function sendEmailDirect(email, { subject, text, html }) {
   try {
-    console.log(`📧 Attempting to send email to: ${email}`);
+    console.log(`📧 Attempting to send email to: ${maskEmail(email)}`);
 
     // Получаем актуальный access token
     const { token } = await oAuth2Client.getAccessToken();
@@ -67,12 +85,15 @@ async function sendEmailDirect(email, { subject, text, html }) {
       }
     });
 
-    console.log(`✅ Email sent successfully to ${email}`);
+    console.log(`✅ Email sent successfully to ${maskEmail(email)}`);
     console.log(`📫 Message ID: ${response.data.id}`);
     
     return response.data;
   } catch (error) {
-    console.error(`❌ Failed to send email to ${email}:`, error.message);
+    console.error(
+      `❌ Failed to send email to ${maskEmail(email)}:`,
+      error.message,
+    );
     
     // Если ошибка аутентификации, пробуем обновить токен
     if (error.code === 401 || error.message.includes('authentication')) {
@@ -168,47 +189,97 @@ async function fetchWithRetry(url, headers, retries = 3, delayMs = 5000) {
 
 async function checkProductAvailability() {
   try {
-    const subscriptions = await Subscription.findAll();
+    const maxManagerNotificationAttempts = getMaxNotificationAttempts();
+    const subscriptions = await Subscription.findAll({
+      where: {
+        [Op.or]: [
+          { notification_sent: false },
+          {
+            manager_notification_status: { [Op.in]: ["pending", "failed"] },
+            manager_notification_attempts: {
+              [Op.lt]: maxManagerNotificationAttempts,
+            },
+          },
+        ],
+      },
+    });
 
     for (const subscription of subscriptions) {
-      console.log(
-        `Checking product availability for subscription: ${JSON.stringify(
-          subscription
-        )}`
-      );
+      console.log("Checking product availability", {
+        id: subscription.id,
+        country: subscription.country,
+        sku: subscription.sku,
+      });
 
-      const shopifyConfig = getShopifyConfig(
+      const shopifyConfig = getShopifyConfig(subscription.country);
+      const emailTemplate = getAvailabilityNotificationTemplate(
         subscription.country,
-        subscription
+        subscription,
       );
-      if (!shopifyConfig) {
+      if (!shopifyConfig || !emailTemplate) {
         console.log(
           `No Shopify credentials configured for country: ${subscription.country}`
         );
         continue;
       }
 
-      const { shopifyStore, shopifyAccessToken, subject, text, html } =
+      const { shopifyStore, shopifyAccessToken, shopifyApiVersion } =
         shopifyConfig;
+      const { subject, text, html } = emailTemplate;
+
+      const shouldRetryManagerNotification =
+        ["pending", "failed"].includes(
+          subscription.manager_notification_status,
+        ) &&
+        subscription.manager_notification_attempts <
+          maxManagerNotificationAttempts;
+
+      if (shouldRetryManagerNotification) {
+        try {
+          await deliverProductSubscriptionNotification(
+            subscription,
+            shopifyStore,
+          );
+          console.log(
+            `Bitrix notification sent for subscription ${subscription.id}`,
+          );
+        } catch (error) {
+          console.error(
+            `Failed to retry Bitrix notification for subscription ${subscription.id}:`,
+            error.message,
+          );
+        }
+      }
+
+      if (subscription.notification_sent) {
+        continue;
+      }
 
       try {
         const response = await fetchWithRetry(
-          `https://${shopifyStore}/admin/api/2025-10/products/${subscription.inventory_id}.json`,
+          `https://${shopifyStore}/admin/api/${shopifyApiVersion}/products/${subscription.inventory_id}.json`,
           { "X-Shopify-Access-Token": shopifyAccessToken }
         );
 
         const product = response.data.product;
         if (product) {
-          const availableVariants = product.variants.filter(
-            (variant) => variant.inventory_quantity > 0
-          );
-          console.log(
-            `Available variants: ${JSON.stringify(availableVariants)}`
-          );
-
-          if (availableVariants.length > 0) {
-            await sendNotification(subscription.email, { subject, text, html });
-            await subscription.destroy();
+          if (isSubscribedVariantAvailable(product, subscription.sku)) {
+            try {
+              await deliverAvailabilityNotification(
+                subscription,
+                { subject, text, html },
+                sendNotification,
+              );
+            } catch (error) {
+              console.error(
+                `Failed to notify subscription ${subscription.id}:`,
+                error.message,
+              );
+              await sendErrorNotification(
+                `Failed to process notification ${subscription.id}`,
+                error,
+              );
+            }
           }
         } else {
           console.log(
@@ -232,272 +303,45 @@ async function checkProductAvailability() {
   }
 }
 
-// Функция для получения конфигурации Shopify в зависимости от страны
-function getShopifyConfig(country, subscription) {
-  switch (country) {
-    case "US":
-      return {
-        shopifyStore: process.env.SHOPIFY_US_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_US_ACCESS_TOKEN,
-        subject: "Product Notification",
-        text: `Product ${subscription.sku} is now available in stock.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Dear <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Product <strong>${subscription.sku}</strong> is now available in stock.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;">Thank you for your continued support. We look forward to serving you through our new subscription service.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Best regards<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">16801 Addison Road</p>
-      <p style="color: #1fcfca; text-align: left;">Addison TX</p>
-      <p style="color: #1fcfca;text-align: left;">Suite 124</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">75001</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    case "UK":
-      return {
-        shopifyStore: process.env.SHOPIFY_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_ACCESS_TOKEN,
-        subject: "Product Notification",
-        text: `Product ${subscription.sku} is now available in stock.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Dear <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Product <strong>${subscription.sku}</strong> is now available in stock.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;">Thank you for your continued support. We look forward to serving you through our new subscription service.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Best regards<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">71-75 Shelton Street</p>
-      <p style="color: #1fcfca; text-align: left;">London</p>
-      <p style="color: #1fcfca;text-align: left;">WC2H 9JQ</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">United Kingdom</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    // Добавляем остальные страны по аналогии
-    case "DE":
-      return {
-        shopifyStore: process.env.SHOPIFY_DE_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_DE_ACCESS_TOKEN,
-        subject: "Produktbenachrichtigung",
-        text: `Das Produkt ${subscription.sku} ist jetzt auf Lager verfügbar.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Sehr geehrter <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Das Produkt  <strong>${subscription.sku}</strong> ist ab sofort auf Lager verfügbar.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;"> Wir danken Ihnen herzlich für Ihre anhaltende Unterstützung und freuen uns darauf, Sie mit unserem neuen Abonnementservice betreuen zu dürfen.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Mit besten Grüßen<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">Büro und Lage</p>
-      <p style="color: #1fcfca; text-align: left;">BMGG EUROPE GMBH</p>
-      <p style="color: #1fcfca;text-align: left;">Billbrookdeich 36</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">22113 Hamburg</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    case "PL":
-      return {
-        shopifyStore: process.env.SHOPIFY_PL_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_PL_ACCESS_TOKEN,
-        subject: "Powiadomienie o produkcie",
-        text: `Produkt ${subscription.sku} jest już dostępny w magazynie.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Szanowny <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Z przyjemnością informujemy, że produkt <strong>${subscription.sku}</strong> jest już dostępny w naszym magazynie.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;"> Serdecznie dziękujemy za Twoje stałe wsparcie i z niecierpliwością czekamy na możliwość obsługi w ramach naszej nowej usługi subskrypcyjnej.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Z wyrazami szacunku<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">Büro und Lage</p>
-      <p style="color: #1fcfca; text-align: left;">BMGG EUROPE GMBH</p>
-      <p style="color: #1fcfca;text-align: left;">Billbrookdeich 36</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">22113 Hamburg</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    case "FR":
-      return {
-        shopifyStore: process.env.SHOPIFY_FR_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_FR_ACCESS_TOKEN,
-        subject: "Notification de produit",
-        text: `Le produit ${subscription.sku} est maintenant disponible en stock.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Cher <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Nous avons le plaisir de vous informer que le produit <strong>${subscription.sku}</strong> disponible en stock.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;"> Nous vous remercions sincèrement pour votre fidélité et sommes hâte de vous servir grâce à notre nouveau service d’abonnement.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Cordialement<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">Büro und Lage</p>
-      <p style="color: #1fcfca; text-align: left;">BMGG EUROPE GMBH</p>
-      <p style="color: #1fcfca;text-align: left;">Billbrookdeich 36</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">22113 Hamburg</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    case "IT":
-      return {
-        shopifyStore: process.env.SHOPIFY_IT_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_IT_ACCESS_TOKEN,
-        subject: "Notifica del prodotto",
-        text: `Il prodotto ${subscription.sku} è ora disponibile in magazzino.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Caro <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Siamo lieti di informarvi che il prodotto <strong>${subscription.sku}</strong> è ora disponibile in magazzino.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;">Vi ringraziamo per il costante sostegno e siamo entusiasti di potervi assistere con il nostro nuovo servizio in abbonamento.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Distinti saluti<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">Büro und Lage</p>
-      <p style="color: #1fcfca; text-align: left;">BMGG EUROPE GMBH</p>
-      <p style="color: #1fcfca;text-align: left;">Billbrookdeich 36</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">22113 Hamburg</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    case "ES":
-      return {
-        shopifyStore: process.env.SHOPIFY_ES_STORE,
-        shopifyAccessToken: process.env.SHOPIFY_ES_ACCESS_TOKEN,
-        subject: "Notificación del producto",
-        text: `El producto ${subscription.sku} ya está disponible.`,
-        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
-      <!-- Логотип -->
-      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="Onkron" width="300" style="display: block; margin: 0 auto;" />
-      <!-- Приветствие -->
-      <p style="margin-top: 20px;">Estimado <span style="color: #1fcfca;font-weight: 600;">${subscription.nickname}</span>!</p>
-      <!-- Основной текст -->
-      <p style="margin-top: 20px;">Nos complace informarle que el producto <strong>${subscription.sku}</strong> ya se encuentra disponible en stock.</p>
-      <!-- Заголовок -->
-      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;"> . Agradecemos sinceramente su constante apoyo y esperamos atenderle mediante nuestro nuevo servicio de suscripción.</p>
-      <!-- Заключение -->
-      <p style="margin-top: 20px;text-align: left;">Cordialmente<br>Onkron Technologies</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
-      <!-- Адрес -->
-      <p style="color: #1fcfca; margin-top: 20px;text-align: left;">Büro und Lage</p>
-      <p style="color: #1fcfca; text-align: left;">BMGG EUROPE GMBH</p>
-      <p style="color: #1fcfca;text-align: left;">Billbrookdeich 36</p>
-      <p style="color: #1fcfca; margin-bottom: 20px;text-align: left;">22113 Hamburg</p>
-      <!-- Горизонтальная линия -->
-      <hr style="background-color: #1fcfca; height: 1px; border: none; width: 100%; max-width: 600px; margin: 20px auto;">
-      <!-- Копирайт -->
-      <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${subscription.country}</p>
-    </div>`,
-      };
-    default:
-      return null;
-  }
-}
-
 // Планировщик задач для ежедневной проверки
-cron.schedule("0 0 * * *", () => {
-  console.log("Running daily product availability check...");
-  checkProductAvailability();
-});
+let availabilityCheckRunning = false;
+function scheduleAvailabilityChecks() {
+  const cronConfig = getCronConfig();
+
+  return cron.schedule(
+    cronConfig.schedule,
+    async () => {
+      if (availabilityCheckRunning) {
+        console.warn("Product availability check is already running; skipping.");
+        return;
+      }
+
+      availabilityCheckRunning = true;
+      console.log("Running product availability check...");
+      try {
+        await checkProductAvailability();
+      } finally {
+        availabilityCheckRunning = false;
+      }
+    },
+    { timezone: cronConfig.timezone },
+  );
+}
 
 // Функция отправки уведомлений по электронной почте
 async function sendNotification(email, notification) {
-  try {
-    await sendEmailDirect(email, {
-      subject: notification.subject,
-      text: notification.text,
-      html: notification.html
-    });
-    console.log(`✅ Notification sent to ${email}`);
-  } catch (error) {
-    console.error(`❌ Failed to send notification to ${email}:`, error.message);
-    // Отправляем уведомление об ошибке
-    await sendErrorNotification(`Failed to send notification to ${email}`, error);
-  }
+  await sendEmailDirect(email, {
+    subject: notification.subject,
+    text: notification.text,
+    html: notification.html
+  });
+  console.log(`✅ Notification sent to ${maskEmail(email)}`);
 }
 
 // Health check endpoint
 app.get("/health", async (req, res) => {
-  try {
-    const { token } = await oAuth2Client.getAccessToken();
-    if (token) {
-      res.json({ 
-        status: "healthy", 
-        gmail: "connected",
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      res.status(500).json({ 
-        status: "unhealthy", 
-        gmail: "disconnected",
-        timestamp: new Date().toISOString()
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ 
-      status: "unhealthy", 
-      gmail: "error",
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+  const report = await createHealthReport(sequelize, oAuth2Client);
+  res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
 // Тестирование соединения при старте
@@ -516,11 +360,27 @@ async function testGmailConnection() {
   }
 }
 
-// Запускаем тест при старте сервера
-testGmailConnection();
+async function startWorkerServer() {
+  await sequelize.authenticate();
+  console.log("Worker database connection established");
+  await testGmailConnection();
+  scheduleAvailabilityChecks();
 
-// Слушаем порт
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+  return app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
 
+if (require.main === module) {
+  startWorkerServer().catch((error) => {
+    console.error("Failed to start worker:", error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  app,
+  checkProductAvailability,
+  scheduleAvailabilityChecks,
+  startWorkerServer,
+};
