@@ -1,4 +1,7 @@
 const migration = require("../migrations/20260804000000-create-notifications");
+const swappedSubscriptionMigration = require(
+  "../migrations/20260804160000-fix-swapped-matthias-subscription",
+);
 
 const Sequelize = {
   INTEGER: "INTEGER",
@@ -56,5 +59,49 @@ test("adds only missing delivery columns to an existing table", async () => {
     "notifications",
     "notification_sent",
     expect.objectContaining({ allowNull: false, defaultValue: false }),
+  );
+});
+
+test("corrects the swapped name and email only for the matching subscription", async () => {
+  const queryInterface = {
+    bulkUpdate: jest.fn().mockResolvedValue(undefined),
+  };
+
+  await swappedSubscriptionMigration.up(queryInterface);
+
+  expect(queryInterface.bulkUpdate).toHaveBeenCalledWith(
+    "notifications",
+    {
+      nickname: "schwarz TS2210",
+      email: "matthias.michalk@gmx.de",
+    },
+    {
+      sku: "TS2210-B",
+      country: "DE",
+      nickname: "matthias.michalk@gmx.de",
+      email: "schwarz TS2210",
+    },
+  );
+});
+
+test("reverts the corrected subscription values", async () => {
+  const queryInterface = {
+    bulkUpdate: jest.fn().mockResolvedValue(undefined),
+  };
+
+  await swappedSubscriptionMigration.down(queryInterface);
+
+  expect(queryInterface.bulkUpdate).toHaveBeenCalledWith(
+    "notifications",
+    {
+      nickname: "matthias.michalk@gmx.de",
+      email: "schwarz TS2210",
+    },
+    {
+      sku: "TS2210-B",
+      country: "DE",
+      nickname: "schwarz TS2210",
+      email: "matthias.michalk@gmx.de",
+    },
   );
 });

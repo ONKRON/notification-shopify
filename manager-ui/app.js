@@ -4,6 +4,7 @@ createApp({
   setup() {
     const dashboard = ref(null);
     const selectedCountries = ref([]);
+    const selectedSiteBySku = ref({});
     const searchTerm = ref("");
     const loading = ref(true);
     const refreshing = ref(false);
@@ -25,14 +26,18 @@ createApp({
             ? product.sites.filter((site) => selectedCountries.value.includes(site.country))
             : product.sites;
           if (!sites.length) return null;
-          const representative = sites.find((site) => site.catalogStatus === "available") || sites[0];
+          const savedCountry = selectedSiteBySku.value[product.sku];
+          const representative =
+            sites.find((site) => site.country === savedCountry) ||
+            sites.find((site) => site.catalogStatus === "available") ||
+            sites[0];
           return {
             ...product,
             sites,
             title: representative.title || product.title || `SKU ${product.sku}`,
             imageUrl: representative.imageUrl || product.imageUrl || null,
             totalSubscriptions: sites.reduce((sum, site) => sum + site.subscriptions, 0),
-            selectedSiteCountry: sites[0].country,
+            selectedSiteCountry: representative.country,
           };
         })
         .filter(Boolean)
@@ -56,6 +61,13 @@ createApp({
 
     const selectedSite = (product) =>
       product.sites.find((site) => site.country === product.selectedSiteCountry) || product.sites[0];
+
+    function selectProductSite(product, event) {
+      selectedSiteBySku.value = {
+        ...selectedSiteBySku.value,
+        [product.sku]: event.target.value,
+      };
+    }
 
     const pluralizeSubscriptions = (count) => {
       const mod10 = count % 10;
@@ -186,6 +198,7 @@ createApp({
       searchTerm,
       selectedCountries,
       selectedCountriesLabel,
+      selectProductSite,
       selectedSite,
       singleSelectedCountry,
       summary,
@@ -286,7 +299,13 @@ createApp({
                       <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
                     </template>
                     <template v-else>
-                      <select v-model="product.selectedSiteCountry" class="site-select" :aria-label="'Выбрать сайт для ' + product.sku" @click.stop>
+                      <select
+                        :value="product.selectedSiteCountry"
+                        class="site-select"
+                        :aria-label="'Выбрать сайт для ' + product.sku"
+                        @click.stop
+                        @change.stop="selectProductSite(product, $event)"
+                      >
                         <option v-for="site in product.sites" :key="site.country" :value="site.country">
                           {{ site.country }} · {{ site.subscriptions }} {{ pluralizeSubscriptions(site.subscriptions) }}
                         </option>
