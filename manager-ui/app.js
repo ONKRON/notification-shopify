@@ -253,7 +253,6 @@ createApp({
       <div class="header__nav-bar">
         <nav class="header__nav" aria-label="Навигация панели">
           <span class="header__nav-label">Подписка на товары</span>
-          <h1>Подписки на товары</h1>
           <span class="header__scope">{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</span>
         </nav>
       </div>
