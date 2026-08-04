@@ -1,4 +1,4 @@
-const migration = require("./20260804000000-create-notifications");
+const migration = require("../migrations/20260804000000-create-notifications");
 
 const Sequelize = {
   INTEGER: "INTEGER",
