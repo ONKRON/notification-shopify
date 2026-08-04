@@ -80,11 +80,9 @@ createApp({
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
 
-    function focusSearch() {
-      const search = document.getElementById("dashboard-search");
-      if (!search) return;
-      search.scrollIntoView({ behavior: "smooth", block: "center" });
-      window.setTimeout(() => search.focus(), 250);
+    function resetDashboardView() {
+      selectedCountries.value = [];
+      searchTerm.value = "";
     }
 
     async function loadDashboard(forceRefresh = false) {
@@ -195,7 +193,6 @@ createApp({
       detailsLoading,
       detailsProduct,
       error,
-      focusSearch,
       formatDate,
       loadDashboard,
       loading,
@@ -203,6 +200,7 @@ createApp({
       pluralizeSubscriptions,
       products,
       refreshing,
+      resetDashboardView,
       searchTerm,
       selectedCountries,
       selectedCountriesLabel,
@@ -221,10 +219,6 @@ createApp({
           <img src="/manager/assets/onkron-logo.svg" alt="ONKRON">
         </a>
         <div class="header__tools">
-          <button class="header__search" type="button" @click="focusSearch">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
-            <span>Поиск</span>
-          </button>
           <div class="updated" v-if="dashboard">Обновлено {{ formatDate(dashboard.generatedAt) }}</div>
           <div class="updated" v-else>Загрузка данных…</div>
         </div>
@@ -232,7 +226,7 @@ createApp({
       <div class="header__nav-bar">
         <nav class="header__nav" aria-label="Навигация панели">
           <span class="header__nav-label">Менеджерская панель</span>
-          <h1>Подписки на товары</h1>
+          <h1><a href="#products" @click="resetDashboardView">Подписки на товары</a></h1>
           <span class="header__scope">{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</span>
         </nav>
       </div>
