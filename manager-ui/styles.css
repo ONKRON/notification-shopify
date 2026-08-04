@@ -57,8 +57,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .header__nav::-webkit-scrollbar { display: none; }
 .header__nav-label { color: #6f7077; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .header__nav h1 { margin: 0; font-size: 15px; font-weight: 850; letter-spacing: .015em; text-transform: uppercase; }
-.header__nav h1 a { color: inherit; text-decoration: none; }
-.header__nav h1 a:hover, .header__nav h1 a:focus-visible { color: #0b837f; outline: none; }
 .header__scope { margin-left: auto; color: #6f7077; font-size: 13px; font-weight: 650; text-transform: uppercase; }
 .updated { color: #73757b; font-size: 12px; white-space: nowrap; }
 .main { max-width: 1440px; margin: 0 auto; padding: 28px clamp(20px, 5vw, 72px) 64px; }

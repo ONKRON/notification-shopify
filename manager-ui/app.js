@@ -23,7 +23,9 @@ createApp({
       return dashboard.value.products
         .map((product) => {
           const sites = selectedCountries.value.length
-            ? product.sites.filter((site) => selectedCountries.value.includes(site.country))
+            ? product.sites.filter((site) =>
+                selectedCountries.value.includes(site.country),
+              )
             : product.sites;
           if (!sites.length) return null;
           const savedCountry = selectedSiteBySku.value[product.sku];
@@ -34,33 +36,51 @@ createApp({
           return {
             ...product,
             sites,
-            title: representative.title || product.title || `SKU ${product.sku}`,
+            title:
+              representative.title || product.title || `SKU ${product.sku}`,
             imageUrl: representative.imageUrl || product.imageUrl || null,
-            totalSubscriptions: sites.reduce((sum, site) => sum + site.subscriptions, 0),
+            totalSubscriptions: sites.reduce(
+              (sum, site) => sum + site.subscriptions,
+              0,
+            ),
             selectedSiteCountry: representative.country,
           };
         })
         .filter(Boolean)
-        .filter((product) =>
-          !query || product.title.toLowerCase().includes(query) || product.sku.toLowerCase().includes(query),
+        .filter(
+          (product) =>
+            !query ||
+            product.title.toLowerCase().includes(query) ||
+            product.sku.toLowerCase().includes(query),
         );
     });
 
     const summary = computed(() => ({
-      subscriptions: products.value.reduce((sum, product) => sum + product.totalSubscriptions, 0),
+      subscriptions: products.value.reduce(
+        (sum, product) => sum + product.totalSubscriptions,
+        0,
+      ),
       products: products.value.length,
-      countries: new Set(products.value.flatMap((product) => product.sites.map((site) => site.country))).size,
+      countries: new Set(
+        products.value.flatMap((product) =>
+          product.sites.map((site) => site.country),
+        ),
+      ).size,
     }));
 
     const singleSelectedCountry = computed(() =>
       selectedCountries.value.length === 1 ? selectedCountries.value[0] : null,
     );
     const selectedCountriesLabel = computed(() =>
-      selectedCountries.value.length ? selectedCountries.value.join(", ") : "все страны",
+      selectedCountries.value.length
+        ? selectedCountries.value.join(", ")
+        : "все страны",
     );
 
     const selectedSite = (product) =>
-      product.sites.find((site) => site.country === product.selectedSiteCountry) || product.sites[0];
+      product.sites.find(
+        (site) => site.country === product.selectedSiteCountry,
+      ) || product.sites[0];
 
     function selectProductSite(product, event) {
       selectedSiteBySku.value = {
@@ -73,17 +93,13 @@ createApp({
       const mod10 = count % 10;
       const mod100 = count % 100;
       if (mod10 === 1 && mod100 !== 11) return "подписка";
-      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "подписки";
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+        return "подписки";
       return "подписок";
     };
 
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
-
-    function resetDashboardView() {
-      selectedCountries.value = [];
-      searchTerm.value = "";
-    }
 
     async function loadDashboard(forceRefresh = false) {
       refreshing.value = forceRefresh;
@@ -91,11 +107,18 @@ createApp({
       error.value = "";
       try {
         const suffix = forceRefresh ? "?refresh=1" : "";
-        const response = await fetch(`/api/manager/subscriptions${suffix}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Не удалось загрузить данные: ${response.status}`);
+        const response = await fetch(`/api/manager/subscriptions${suffix}`, {
+          cache: "no-store",
+        });
+        if (!response.ok)
+          throw new Error(`Не удалось загрузить данные: ${response.status}`);
         dashboard.value = await response.json();
-        const availableCountries = new Set(dashboard.value.countries.map((country) => country.code));
-        selectedCountries.value = selectedCountries.value.filter((country) => availableCountries.has(country));
+        const availableCountries = new Set(
+          dashboard.value.countries.map((country) => country.code),
+        );
+        selectedCountries.value = selectedCountries.value.filter((country) =>
+          availableCountries.has(country),
+        );
       } catch (loadError) {
         error.value = loadError.message;
       } finally {
@@ -119,9 +142,14 @@ createApp({
       await nextTick();
       try {
         const params = new URLSearchParams({ sku: product.sku });
-        if (selectedCountries.value.length) params.set("countries", selectedCountries.value.join(","));
-        const response = await fetch(`/api/manager/subscription-details?${params}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Не удалось загрузить детали: ${response.status}`);
+        if (selectedCountries.value.length)
+          params.set("countries", selectedCountries.value.join(","));
+        const response = await fetch(
+          `/api/manager/subscription-details?${params}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok)
+          throw new Error(`Не удалось загрузить детали: ${response.status}`);
         details.value = await response.json();
       } catch (loadError) {
         detailsError.value = loadError.message;
@@ -200,7 +228,6 @@ createApp({
       pluralizeSubscriptions,
       products,
       refreshing,
-      resetDashboardView,
       searchTerm,
       selectedCountries,
       selectedCountriesLabel,
@@ -225,8 +252,8 @@ createApp({
       </div>
       <div class="header__nav-bar">
         <nav class="header__nav" aria-label="Навигация панели">
-          <span class="header__nav-label">Менеджерская панель</span>
-          <h1><a href="#products" @click="resetDashboardView">Подписки на товары</a></h1>
+          <span class="header__nav-label">Подписка на товары</span>
+          <h1>Подписки на товары</h1>
           <span class="header__scope">{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</span>
         </nav>
       </div>
