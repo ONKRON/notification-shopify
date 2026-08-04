@@ -80,6 +80,13 @@ createApp({
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
 
+    function focusSearch() {
+      const search = document.getElementById("dashboard-search");
+      if (!search) return;
+      search.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => search.focus(), 250);
+    }
+
     async function loadDashboard(forceRefresh = false) {
       refreshing.value = forceRefresh;
       loading.value = !dashboard.value;
@@ -188,6 +195,7 @@ createApp({
       detailsLoading,
       detailsProduct,
       error,
+      focusSearch,
       formatDate,
       loadDashboard,
       loading,
@@ -206,11 +214,27 @@ createApp({
     };
   },
   template: `
+    <div class="site-topline"></div>
     <header class="header">
-      <div class="header__row">
-        <div><div class="brand">ONKRON</div><h1>Подписки на товары</h1></div>
-        <div class="updated" v-if="dashboard">Обновлено {{ formatDate(dashboard.generatedAt) }}</div>
-        <div class="updated" v-else>Загрузка данных…</div>
+      <div class="header__primary">
+        <a class="header__logo" href="/manager/subscriptions" aria-label="ONKRON — панель подписок">
+          <img src="/manager/assets/onkron-logo.svg" alt="ONKRON">
+        </a>
+        <div class="header__tools">
+          <button class="header__search" type="button" @click="focusSearch">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
+            <span>Поиск</span>
+          </button>
+          <div class="updated" v-if="dashboard">Обновлено {{ formatDate(dashboard.generatedAt) }}</div>
+          <div class="updated" v-else>Загрузка данных…</div>
+        </div>
+      </div>
+      <div class="header__nav-bar">
+        <nav class="header__nav" aria-label="Навигация панели">
+          <span class="header__nav-label">Менеджерская панель</span>
+          <h1>Подписки на товары</h1>
+          <span class="header__scope">{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</span>
+        </nav>
       </div>
     </header>
 
@@ -237,7 +261,7 @@ createApp({
           </button>
         </div>
         <div class="actions">
-          <input v-model="searchTerm" class="search" type="search" placeholder="Название или SKU" aria-label="Название или SKU">
+          <input id="dashboard-search" v-model="searchTerm" class="search" type="search" placeholder="Название или SKU" aria-label="Название или SKU">
           <button class="button" type="button" :disabled="refreshing" @click="loadDashboard(true)">
             {{ refreshing ? 'Обновляем…' : 'Обновить' }}
           </button>
@@ -253,7 +277,7 @@ createApp({
           <div class="metric"><strong>{{ summary.countries }}</strong><span>Стран</span></div>
         </div>
 
-        <section class="section">
+        <section id="products" class="section">
           <div class="section__head">
             <h2>{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</h2>
             <span>{{ products.length }} товаров</span>

@@ -131,12 +131,17 @@ test("protects and serves the Vue manager assets", async () => {
   const vueAsset = await request(app)
     .get("/manager/vue.js")
     .auth("manager", "secret");
+  const logoAsset = await request(app)
+    .get("/manager/assets/onkron-logo.svg")
+    .auth("manager", "secret");
 
   expect(unauthorized.status).toBe(401);
   expect(appAsset.status).toBe(200);
   expect(appAsset.text).toContain("createApp");
   expect(vueAsset.status).toBe(200);
   expect(vueAsset.text).toContain("Vue");
+  expect(logoAsset.status).toBe(200);
+  expect(logoAsset.headers["content-type"]).toContain("image/svg+xml");
 });
 
 test("returns aggregated manager dashboard data", async () => {

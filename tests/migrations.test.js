@@ -2,6 +2,9 @@ const migration = require("../migrations/20260804000000-create-notifications");
 const swappedSubscriptionMigration = require(
   "../migrations/20260804160000-fix-swapped-matthias-subscription",
 );
+const anomalyCleanupMigration = require(
+  "../migrations/20260804170000-clean-notification-anomalies",
+);
 
 const Sequelize = {
   INTEGER: "INTEGER",
@@ -104,4 +107,51 @@ test("reverts the corrected subscription values", async () => {
       email: "matthias.michalk@gmx.de",
     },
   );
+});
+
+test("cleans notification anomalies inside one transaction", async () => {
+  const transaction = { id: "cleanup-transaction" };
+  const query = jest.fn().mockResolvedValue(undefined);
+  const queryInterface = {
+    sequelize: {
+      query,
+      transaction: jest.fn(async (callback) => callback(transaction)),
+    },
+  };
+
+  await anomalyCleanupMigration.up(queryInterface);
+
+  expect(queryInterface.sequelize.transaction).toHaveBeenCalledTimes(1);
+  expect(query).toHaveBeenCalledTimes(4);
+  expect(query.mock.calls[0][0]).toContain("BTRIM(nickname)");
+  expect(query.mock.calls[1][1]).toEqual({
+    replacements: { ids: [142, 225, 255, 461] },
+    transaction,
+  });
+  expect(query.mock.calls[2][1]).toEqual({
+    replacements: { ids: [423, 434, 588] },
+    transaction,
+  });
+  expect(query.mock.calls[3][1]).toEqual({
+    replacements: { ids: [582] },
+    transaction,
+  });
+});
+
+test("reverts deactivation and neutral nicknames", async () => {
+  const transaction = { id: "cleanup-down-transaction" };
+  const query = jest.fn().mockResolvedValue(undefined);
+  const queryInterface = {
+    sequelize: {
+      query,
+      transaction: jest.fn(async (callback) => callback(transaction)),
+    },
+  };
+
+  await anomalyCleanupMigration.down(queryInterface);
+
+  expect(query).toHaveBeenCalledTimes(3);
+  expect(query.mock.calls[0][0]).toContain("notification_sent = false");
+  expect(query.mock.calls[1][0]).toContain("nickname = email");
+  expect(query.mock.calls[2][0]).toContain("nickname = email");
 });
