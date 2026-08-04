@@ -1,0 +1,357 @@
+const { createApp, computed, nextTick, onBeforeUnmount, onMounted, ref } = Vue;
+
+createApp({
+  setup() {
+    const dashboard = ref(null);
+    const selectedCountry = ref(null);
+    const searchTerm = ref("");
+    const loading = ref(true);
+    const refreshing = ref(false);
+    const error = ref("");
+    const details = ref(null);
+    const detailsProduct = ref(null);
+    const detailsLoading = ref(false);
+    const detailsError = ref("");
+    const copiedEmail = ref("");
+    const toast = ref("");
+    let toastTimer = null;
+
+    const products = computed(() => {
+      if (!dashboard.value) return [];
+      const query = searchTerm.value.trim().toLowerCase();
+      return dashboard.value.products
+        .map((product) => {
+          const sites = selectedCountry.value
+            ? product.sites.filter((site) => site.country === selectedCountry.value)
+            : product.sites;
+          if (!sites.length) return null;
+          const representative = sites.find((site) => site.catalogStatus === "available") || sites[0];
+          return {
+            ...product,
+            sites,
+            title: representative.title || product.title || `SKU ${product.sku}`,
+            imageUrl: representative.imageUrl || product.imageUrl || null,
+            totalSubscriptions: sites.reduce((sum, site) => sum + site.subscriptions, 0),
+            selectedSiteCountry: sites[0].country,
+          };
+        })
+        .filter(Boolean)
+        .filter((product) =>
+          !query || product.title.toLowerCase().includes(query) || product.sku.toLowerCase().includes(query),
+        );
+    });
+
+    const summary = computed(() => ({
+      subscriptions: products.value.reduce((sum, product) => sum + product.totalSubscriptions, 0),
+      products: products.value.length,
+      countries: new Set(products.value.flatMap((product) => product.sites.map((site) => site.country))).size,
+    }));
+
+    const selectedSite = (product) =>
+      product.sites.find((site) => site.country === product.selectedSiteCountry) || product.sites[0];
+
+    const pluralizeSubscriptions = (count) => {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 === 1 && mod100 !== 11) return "подписка";
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "подписки";
+      return "подписок";
+    };
+
+    const formatDate = (value) =>
+      value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
+
+    async function loadDashboard(forceRefresh = false) {
+      refreshing.value = forceRefresh;
+      loading.value = !dashboard.value;
+      error.value = "";
+      try {
+        const suffix = forceRefresh ? "?refresh=1" : "";
+        const response = await fetch(`/api/manager/subscriptions${suffix}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Не удалось загрузить данные: ${response.status}`);
+        dashboard.value = await response.json();
+        if (
+          selectedCountry.value &&
+          !dashboard.value.countries.some((country) => country.code === selectedCountry.value)
+        ) selectedCountry.value = null;
+      } catch (loadError) {
+        error.value = loadError.message;
+      } finally {
+        loading.value = false;
+        refreshing.value = false;
+      }
+    }
+
+    function chooseCountry(country) {
+      selectedCountry.value = selectedCountry.value === country ? null : country;
+    }
+
+    async function openDetails(product) {
+      detailsProduct.value = product;
+      details.value = null;
+      detailsError.value = "";
+      detailsLoading.value = true;
+      document.body.classList.add("modal-open");
+      await nextTick();
+      try {
+        const params = new URLSearchParams({ sku: product.sku });
+        if (selectedCountry.value) params.set("country", selectedCountry.value);
+        const response = await fetch(`/api/manager/subscription-details?${params}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Не удалось загрузить детали: ${response.status}`);
+        details.value = await response.json();
+      } catch (loadError) {
+        detailsError.value = loadError.message;
+      } finally {
+        detailsLoading.value = false;
+      }
+    }
+
+    function closeDetails() {
+      detailsProduct.value = null;
+      details.value = null;
+      copiedEmail.value = "";
+      document.body.classList.remove("modal-open");
+    }
+
+    async function writeClipboard(value) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      if (!copied) throw new Error("Copy failed");
+    }
+
+    async function copyEmail(email) {
+      try {
+        await writeClipboard(email);
+        copiedEmail.value = email;
+        toast.value = `Email ${email} скопирован`;
+      } catch {
+        toast.value = "Не удалось скопировать email";
+      }
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => {
+        toast.value = "";
+        copiedEmail.value = "";
+      }, 2200);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === "Escape" && detailsProduct.value) closeDetails();
+    }
+
+    onMounted(() => {
+      window.addEventListener("keydown", handleKeydown);
+      loadDashboard();
+    });
+    onBeforeUnmount(() => {
+      window.removeEventListener("keydown", handleKeydown);
+      window.clearTimeout(toastTimer);
+    });
+
+    return {
+      closeDetails,
+      copiedEmail,
+      copyEmail,
+      chooseCountry,
+      dashboard,
+      details,
+      detailsError,
+      detailsLoading,
+      detailsProduct,
+      error,
+      formatDate,
+      loadDashboard,
+      loading,
+      openDetails,
+      pluralizeSubscriptions,
+      products,
+      refreshing,
+      searchTerm,
+      selectedCountry,
+      selectedSite,
+      summary,
+      toast,
+    };
+  },
+  template: `
+    <header class="header">
+      <div class="header__row">
+        <div><div class="brand">ONKRON</div><h1>Подписки на товары</h1></div>
+        <div class="updated" v-if="dashboard">Обновлено {{ formatDate(dashboard.generatedAt) }}</div>
+        <div class="updated" v-else>Загрузка данных…</div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="toolbar" v-if="dashboard">
+        <div class="filters" aria-label="Фильтр по стране">
+          <button
+            class="country"
+            :class="{ 'country--active': !selectedCountry }"
+            type="button"
+            @click="selectedCountry = null"
+          >Все страны</button>
+          <button
+            v-for="country in dashboard.countries"
+            :key="country.code"
+            class="country"
+            :class="{ 'country--active': selectedCountry === country.code }"
+            type="button"
+            :aria-pressed="selectedCountry === country.code"
+            @click="chooseCountry(country.code)"
+          >
+            <span class="country__check" aria-hidden="true">{{ selectedCountry === country.code ? '✓' : '' }}</span>
+            {{ country.code }} · {{ country.totalSubscriptions }}
+          </button>
+        </div>
+        <div class="actions">
+          <input v-model="searchTerm" class="search" type="search" placeholder="Название или SKU" aria-label="Название или SKU">
+          <button class="button" type="button" :disabled="refreshing" @click="loadDashboard(true)">
+            {{ refreshing ? 'Обновляем…' : 'Обновить' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="loading" class="state">Загружаем подписки и каталог Shopify…</div>
+      <div v-else-if="error" class="state state--error">{{ error }}</div>
+      <template v-else-if="dashboard">
+        <div class="summary">
+          <div class="metric"><strong>{{ summary.subscriptions }}</strong><span>Активных подписок</span></div>
+          <div class="metric"><strong>{{ summary.products }}</strong><span>Товаров</span></div>
+          <div class="metric"><strong>{{ summary.countries }}</strong><span>Стран</span></div>
+        </div>
+
+        <section class="section">
+          <div class="section__head">
+            <h2>{{ selectedCountry || 'Все страны' }}</h2>
+            <span>{{ products.length }} товаров</span>
+          </div>
+          <div v-if="products.length" class="grid">
+            <article
+              v-for="product in products"
+              :key="product.sku"
+              class="card"
+              role="button"
+              tabindex="0"
+              :aria-label="'Открыть детали ' + product.sku"
+              @click="openDetails(product)"
+              @keydown.enter.prevent="openDetails(product)"
+              @keydown.space.prevent="openDetails(product)"
+            >
+              <div class="card__image">
+                <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.title" loading="lazy">
+                <span v-else class="card__placeholder">{{ product.sites[0].country }}</span>
+                <span class="badge">{{ product.totalSubscriptions }} {{ pluralizeSubscriptions(product.totalSubscriptions) }}</span>
+              </div>
+              <div class="card__body">
+                <h3 class="card__title">{{ product.title }}</h3>
+                <div v-if="!selectedCountry" class="card__meta">
+                  Доступен на сайтах: {{ product.sites.map(site => site.country).join(', ') }}
+                </div>
+                <div class="sku">
+                  <span>{{ product.sku || 'Без SKU' }}</span><strong>{{ product.totalSubscriptions }}</strong>
+                </div>
+                <div class="card__site">
+                  <template v-if="selectedCountry">
+                    <a
+                      v-if="product.sites[0].productUrl"
+                      class="button"
+                      :href="product.sites[0].productUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click.stop
+                    >Открыть на сайте {{ product.sites[0].country }}</a>
+                    <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
+                  </template>
+                  <template v-else>
+                    <select v-model="product.selectedSiteCountry" class="site-select" :aria-label="'Выбрать сайт для ' + product.sku" @click.stop>
+                      <option v-for="site in product.sites" :key="site.country" :value="site.country">
+                        {{ site.country }} · {{ site.subscriptions }} {{ pluralizeSubscriptions(site.subscriptions) }}
+                      </option>
+                    </select>
+                    <a
+                      v-if="selectedSite(product).productUrl"
+                      class="button"
+                      :href="selectedSite(product).productUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click.stop
+                    >Открыть на сайте {{ selectedSite(product).country }}</a>
+                    <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
+                  </template>
+                </div>
+                <button class="card__details" type="button" @click.stop="openDetails(product)">
+                  Посмотреть подписчиков →
+                </button>
+              </div>
+            </article>
+          </div>
+          <div v-else class="state">По выбранным фильтрам подписок нет.</div>
+        </section>
+      </template>
+    </main>
+
+    <div v-if="detailsProduct" class="modal" @click.self="closeDetails">
+      <section class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="details-title">
+        <div class="modal__head">
+          <div>
+            <h2 id="details-title" class="modal__title">{{ detailsProduct.title }}</h2>
+            <div class="modal__subtitle">SKU {{ detailsProduct.sku }} · {{ selectedCountry || 'все страны' }}</div>
+          </div>
+          <button class="modal__close" type="button" aria-label="Закрыть" @click="closeDetails">✕</button>
+        </div>
+        <div class="modal__content">
+          <div v-if="detailsLoading" class="state">Загружаем подписчиков…</div>
+          <div v-else-if="detailsError" class="state state--error">{{ detailsError }}</div>
+          <div v-else-if="details && !details.sites.length" class="state">Активных подписчиков не найдено.</div>
+          <template v-else-if="details">
+            <section
+              v-for="site in details.sites"
+              :key="site.country"
+              class="detail-site"
+              :class="{ 'detail-site--single': selectedCountry }"
+            >
+              <div class="detail-site__head">
+                <strong v-if="!selectedCountry">{{ site.country }} · {{ site.totalSubscriptions }} {{ pluralizeSubscriptions(site.totalSubscriptions) }}</strong>
+                <span v-else>{{ site.totalSubscriptions }} {{ pluralizeSubscriptions(site.totalSubscriptions) }}</span>
+                <a v-if="site.productUrl" class="detail-link" :href="site.productUrl" target="_blank" rel="noopener noreferrer">
+                  Открыть товар на сайте →
+                </a>
+              </div>
+              <div class="subscribers">
+                <div v-for="subscriber in site.subscribers" :key="subscriber.id" class="subscriber">
+                  <span class="subscriber__name">{{ subscriber.nickname || 'Без имени' }}</span>
+                  <button
+                    class="subscriber__email"
+                    :class="{ 'subscriber__email--copied': copiedEmail === subscriber.email }"
+                    type="button"
+                    :title="'Скопировать ' + subscriber.email"
+                    @click="copyEmail(subscriber.email)"
+                  >
+                    <span>{{ subscriber.email }}</span>
+                    <small>{{ copiedEmail === subscriber.email ? 'Скопировано ✓' : 'Нажмите, чтобы скопировать' }}</small>
+                  </button>
+                  <span class="subscriber__date">{{ formatDate(subscriber.subscribedAt) }}</span>
+                </div>
+              </div>
+            </section>
+          </template>
+        </div>
+      </section>
+    </div>
+
+    <transition name="toast">
+      <div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div>
+    </transition>
+  `,
+}).mount("#app");

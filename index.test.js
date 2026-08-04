@@ -119,6 +119,22 @@ test("serves the manager dashboard only with Basic Auth", async () => {
   expect(authorized.text).toContain("Подписки на товары");
 });
 
+test("protects and serves the Vue manager assets", async () => {
+  const unauthorized = await request(app).get("/manager/assets/app.js");
+  const appAsset = await request(app)
+    .get("/manager/assets/app.js")
+    .auth("manager", "secret");
+  const vueAsset = await request(app)
+    .get("/manager/vue.js")
+    .auth("manager", "secret");
+
+  expect(unauthorized.status).toBe(401);
+  expect(appAsset.status).toBe(200);
+  expect(appAsset.text).toContain("createApp");
+  expect(vueAsset.status).toBe(200);
+  expect(vueAsset.text).toContain("Vue");
+});
+
 test("returns aggregated manager dashboard data", async () => {
   const response = await request(app)
     .get("/api/manager/subscriptions")

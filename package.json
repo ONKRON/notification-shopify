@@ -16,7 +16,8 @@
         "postmark": "^4.0.5",
         "resend": "^6.4.2",
         "sequelize": "^6.37.3",
-        "sequelize-cli": "^6.6.5"
+        "sequelize-cli": "^6.6.5",
+        "vue": "^3.5.40"
     },
     "name": "notification-shopify",
     "version": "1.0.0",

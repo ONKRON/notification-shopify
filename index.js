@@ -132,6 +132,19 @@ app.get("/health", async (req, res) => {
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
+app.get("/manager/vue.js", requireManagerAuth, (req, res) => {
+  res.sendFile(require.resolve("vue/dist/vue.global.prod.js"));
+});
+
+app.use(
+  "/manager/assets",
+  requireManagerAuth,
+  express.static(path.join(__dirname, "manager-ui"), {
+    fallthrough: false,
+    maxAge: process.env.NODE_ENV === "production" ? "1h" : 0,
+  }),
+);
+
 app.get("/manager/subscriptions", requireManagerAuth, (req, res) => {
   res.type("html").send(renderManagerDashboard());
 });
