@@ -247,7 +247,10 @@ createApp({
         </a>
         <div class="header__tools">
           <div class="updated" v-if="dashboard">Обновлено {{ formatDate(dashboard.generatedAt) }}</div>
-          <div class="updated" v-else>Загрузка данных…</div>
+          <div class="updated" v-else>
+            <span class="skeleton skeleton--updated" aria-hidden="true"></span>
+            <span class="sr-only">Загрузка данных</span>
+          </div>
         </div>
       </div>
       <div class="header__nav-bar">
@@ -288,7 +291,51 @@ createApp({
         </div>
       </div>
 
-      <div v-if="loading" class="state">Загружаем подписки и каталог Shopify…</div>
+      <div v-if="loading" class="dashboard-skeleton" role="status" aria-live="polite">
+        <span class="sr-only">Загружаем подписки и каталог Shopify</span>
+
+        <div class="toolbar toolbar--skeleton" aria-hidden="true">
+          <div class="filters">
+            <span v-for="item in 8" :key="item" class="skeleton skeleton--chip"></span>
+          </div>
+          <div class="actions">
+            <span class="skeleton skeleton--search"></span>
+            <span class="skeleton skeleton--button"></span>
+          </div>
+        </div>
+
+        <div class="summary" aria-hidden="true">
+          <div v-for="item in 3" :key="item" class="metric metric--skeleton">
+            <span class="skeleton skeleton--metric-value"></span>
+            <span class="skeleton skeleton--metric-label"></span>
+          </div>
+        </div>
+
+        <section class="section" aria-hidden="true">
+          <div class="section__head section__head--skeleton">
+            <span class="skeleton skeleton--heading"></span>
+            <span class="skeleton skeleton--count"></span>
+          </div>
+          <div class="grid">
+            <article v-for="item in 4" :key="item" class="card card--skeleton">
+              <div class="card__image skeleton skeleton--image"></div>
+              <div class="card__body">
+                <div class="card__top">
+                  <span class="skeleton skeleton--title"></span>
+                  <span class="skeleton skeleton--title skeleton--title-short"></span>
+                  <span class="skeleton skeleton--meta"></span>
+                </div>
+                <div class="card__bottom">
+                  <span class="skeleton skeleton--sku"></span>
+                  <span class="skeleton skeleton--select"></span>
+                  <span class="skeleton skeleton--card-button"></span>
+                  <span class="skeleton skeleton--details"></span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
       <div v-else-if="error" class="state state--error">{{ error }}</div>
       <template v-else-if="dashboard">
         <div class="summary">
