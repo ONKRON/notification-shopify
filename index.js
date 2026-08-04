@@ -22,7 +22,7 @@ sequelize
 const oAuth2Client = new google.auth.OAuth2(
   process.env.GMAIL_CLIENT_ID,
   process.env.GMAIL_CLIENT_SECRET,
-  process.env.GMAIL_REDIRECT_URI
+  process.env.GMAIL_REDIRECT_URI,
 );
 
 // Устанавливаем credentials
@@ -42,42 +42,42 @@ async function sendEmailDirect(email, { subject, text, html }) {
     }
 
     // Создаем Gmail клиент
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
     // Формируем email в формате RFC 5322
     const message = [
       'Content-Type: text/html; charset="UTF-8"\r\n',
-      'MIME-Version: 1.0\r\n',
-      'Content-Transfer-Encoding: 7bit\r\n',
+      "MIME-Version: 1.0\r\n",
+      "Content-Transfer-Encoding: 7bit\r\n",
       `to: ${email}\r\n`,
       `subject: ${subject}\r\n`,
       `from: Onkron Notifications <${process.env.GMAIL_EMAIL}>\r\n`,
-      '\r\n',
-      html
-    ].join('');
+      "\r\n",
+      html,
+    ].join("");
 
     // Кодируем сообщение в base64
     const encodedMessage = Buffer.from(message)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
 
     // Отправляем через Gmail API
     const response = await gmail.users.messages.send({
-      userId: 'me',
+      userId: "me",
       requestBody: {
-        raw: encodedMessage
-      }
+        raw: encodedMessage,
+      },
     });
 
     console.log(`✅ Email sent successfully to ${email}`);
     console.log(`📫 Message ID: ${response.data.id}`);
-    
+
     return response.data;
   } catch (error) {
     console.error(`❌ Failed to send email to ${email}:`, error.message);
-    
+
     // Если ошибка аутентификации, пробуем обновить токен
     if (error.code === 401) {
       console.log("🔄 Refreshing access token...");
@@ -91,7 +91,7 @@ async function sendEmailDirect(email, { subject, text, html }) {
         console.error("❌ Failed to refresh access token:", refreshError);
       }
     }
-    
+
     throw error;
   }
 }
@@ -121,6 +121,15 @@ app.use(cors());
 
 app.post("/send-notification", async (req, res) => {
   const { email, sku, nickname, inventory_id, country } = req.body;
+  const normalizedNickname =
+    typeof nickname === "string" ? nickname.trim() : "";
+
+  if (country !== "DE" && !normalizedNickname) {
+    return res.status(400).json({ message: "Nickname is required" });
+  }
+
+  // В DE клиент запрашивает только email, поэтому используем нейтральное обращение.
+  const subscriptionNickname = normalizedNickname || "Kunde";
   console.log(req.body); // Логирование данных
 
   // Функция для получения конфигурации Shopify в зависимости от страны
@@ -226,7 +235,6 @@ app.post("/send-notification", async (req, res) => {
             <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${country}</p>
     </div>`,
         };
-      // Добавляем остальные страны по аналогии
       case "DE":
         return {
           shopifyStore: process.env.SHOPIFY_DE_STORE,
@@ -238,7 +246,7 @@ app.post("/send-notification", async (req, res) => {
         <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="onkron" width="300" style="display: block; margin: 0 auto;"/>
     
         <!-- Приветствие -->
-        <p style="margin-top: 20px;">Sehr geehrter <span style="color: #1fcfca;font-weight: 600;">${nickname}</span>!</p>
+        <p style="margin-top: 20px;">Sehr geehrter <span style="color: #1fcfca;font-weight: 600;">Kunde</span>!</p>
         
         <!-- Основной текст -->
         <p style="margin-top: 20px;">mit großer Freude präsentieren wir Ihnen unseren neuen Abonnementservice für <strong>${sku}</strong>! Dieser Service gewährleistet, dass Sie ununterbrochen Zugriff auf Ihre bevorzugten Produkte haben, ohne jedes Mal manuell nachbestellen zu müssen.</p>
@@ -511,17 +519,17 @@ app.post("/send-notification", async (req, res) => {
     const subscription = new Subscription({
       email,
       sku,
-      nickname,
+      nickname: subscriptionNickname,
       inventory_id,
       country,
     });
     await subscription.save();
     console.log("Subscription saved:", subscription); // Логирование сохраненной подписки
 
-     // Отправляем email через Gmail API
-     await sendEmailDirect(email, { subject, text, html });
+    // Отправляем email через Gmail API
+    await sendEmailDirect(email, { subject, text, html });
 
-     res.status(200).json({ message: "Email sent successfully" });
+    res.status(200).json({ message: "Email sent successfully" });
   } catch (error) {
     console.error("Error saving subscription:", error);
     res.status(500).json({ message: "Error saving subscription" });
@@ -591,7 +599,7 @@ app.get("/subscription-stats", async (req, res) => {
 app.get("/all-subs", async (req, res) => {
   try {
     const [results] = await sequelize.query(
-      "SELECT sku, country FROM notifications"
+      "SELECT sku, country FROM notifications",
     );
 
     if (!results.length) {
