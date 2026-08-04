@@ -165,10 +165,13 @@ app.get(
   async (req, res) => {
     try {
       const sku = String(req.query.sku || "").trim();
-      const country = String(req.query.country || "").trim().toUpperCase();
+      const countries = String(req.query.countries || req.query.country || "")
+        .split(",")
+        .map((country) => country.trim().toUpperCase())
+        .filter(Boolean);
       if (!sku) return res.status(400).json({ message: "SKU is required" });
 
-      res.json(await getProductSubscriptionDetails(sku, country || null));
+      res.json(await getProductSubscriptionDetails(sku, countries));
     } catch (error) {
       console.error("Failed to load subscription details:", error.message);
       res.status(500).json({ message: "Failed to load subscription details" });

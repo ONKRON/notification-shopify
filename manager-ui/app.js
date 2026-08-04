@@ -3,7 +3,7 @@ const { createApp, computed, nextTick, onBeforeUnmount, onMounted, ref } = Vue;
 createApp({
   setup() {
     const dashboard = ref(null);
-    const selectedCountry = ref(null);
+    const selectedCountries = ref([]);
     const searchTerm = ref("");
     const loading = ref(true);
     const refreshing = ref(false);
@@ -21,8 +21,8 @@ createApp({
       const query = searchTerm.value.trim().toLowerCase();
       return dashboard.value.products
         .map((product) => {
-          const sites = selectedCountry.value
-            ? product.sites.filter((site) => site.country === selectedCountry.value)
+          const sites = selectedCountries.value.length
+            ? product.sites.filter((site) => selectedCountries.value.includes(site.country))
             : product.sites;
           if (!sites.length) return null;
           const representative = sites.find((site) => site.catalogStatus === "available") || sites[0];
@@ -47,6 +47,13 @@ createApp({
       countries: new Set(products.value.flatMap((product) => product.sites.map((site) => site.country))).size,
     }));
 
+    const singleSelectedCountry = computed(() =>
+      selectedCountries.value.length === 1 ? selectedCountries.value[0] : null,
+    );
+    const selectedCountriesLabel = computed(() =>
+      selectedCountries.value.length ? selectedCountries.value.join(", ") : "все страны",
+    );
+
     const selectedSite = (product) =>
       product.sites.find((site) => site.country === product.selectedSiteCountry) || product.sites[0];
 
@@ -70,10 +77,8 @@ createApp({
         const response = await fetch(`/api/manager/subscriptions${suffix}`, { cache: "no-store" });
         if (!response.ok) throw new Error(`Не удалось загрузить данные: ${response.status}`);
         dashboard.value = await response.json();
-        if (
-          selectedCountry.value &&
-          !dashboard.value.countries.some((country) => country.code === selectedCountry.value)
-        ) selectedCountry.value = null;
+        const availableCountries = new Set(dashboard.value.countries.map((country) => country.code));
+        selectedCountries.value = selectedCountries.value.filter((country) => availableCountries.has(country));
       } catch (loadError) {
         error.value = loadError.message;
       } finally {
@@ -83,7 +88,9 @@ createApp({
     }
 
     function chooseCountry(country) {
-      selectedCountry.value = selectedCountry.value === country ? null : country;
+      selectedCountries.value = selectedCountries.value.includes(country)
+        ? selectedCountries.value.filter((selected) => selected !== country)
+        : [...selectedCountries.value, country];
     }
 
     async function openDetails(product) {
@@ -95,7 +102,7 @@ createApp({
       await nextTick();
       try {
         const params = new URLSearchParams({ sku: product.sku });
-        if (selectedCountry.value) params.set("country", selectedCountry.value);
+        if (selectedCountries.value.length) params.set("countries", selectedCountries.value.join(","));
         const response = await fetch(`/api/manager/subscription-details?${params}`, { cache: "no-store" });
         if (!response.ok) throw new Error(`Не удалось загрузить детали: ${response.status}`);
         details.value = await response.json();
@@ -177,8 +184,10 @@ createApp({
       products,
       refreshing,
       searchTerm,
-      selectedCountry,
+      selectedCountries,
+      selectedCountriesLabel,
       selectedSite,
+      singleSelectedCountry,
       summary,
       toast,
     };
@@ -197,20 +206,20 @@ createApp({
         <div class="filters" aria-label="Фильтр по стране">
           <button
             class="country"
-            :class="{ 'country--active': !selectedCountry }"
+            :class="{ 'country--active': !selectedCountries.length }"
             type="button"
-            @click="selectedCountry = null"
+            @click="selectedCountries = []"
           >Все страны</button>
           <button
             v-for="country in dashboard.countries"
             :key="country.code"
             class="country"
-            :class="{ 'country--active': selectedCountry === country.code }"
+            :class="{ 'country--active': selectedCountries.includes(country.code) }"
             type="button"
-            :aria-pressed="selectedCountry === country.code"
+            :aria-pressed="selectedCountries.includes(country.code)"
             @click="chooseCountry(country.code)"
           >
-            <span class="country__check" aria-hidden="true">{{ selectedCountry === country.code ? '✓' : '' }}</span>
+            <span class="country__check" aria-hidden="true">{{ selectedCountries.includes(country.code) ? '✓' : '' }}</span>
             {{ country.code }} · {{ country.totalSubscriptions }}
           </button>
         </div>
@@ -233,7 +242,7 @@ createApp({
 
         <section class="section">
           <div class="section__head">
-            <h2>{{ selectedCountry || 'Все страны' }}</h2>
+            <h2>{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</h2>
             <span>{{ products.length }} товаров</span>
           </div>
           <div v-if="products.length" class="grid">
@@ -254,45 +263,49 @@ createApp({
                 <span class="badge">{{ product.totalSubscriptions }} {{ pluralizeSubscriptions(product.totalSubscriptions) }}</span>
               </div>
               <div class="card__body">
-                <h3 class="card__title">{{ product.title }}</h3>
-                <div v-if="!selectedCountry" class="card__meta">
-                  Доступен на сайтах: {{ product.sites.map(site => site.country).join(', ') }}
+                <div class="card__top">
+                  <h3 class="card__title">{{ product.title }}</h3>
+                  <div v-if="!singleSelectedCountry" class="card__meta">
+                    Доступен на сайтах: {{ product.sites.map(site => site.country).join(', ') }}
+                  </div>
                 </div>
-                <div class="sku">
-                  <span>{{ product.sku || 'Без SKU' }}</span><strong>{{ product.totalSubscriptions }}</strong>
+                <div class="card__bottom">
+                  <div class="sku">
+                    <span>{{ product.sku || 'Без SKU' }}</span><strong>{{ product.totalSubscriptions }}</strong>
+                  </div>
+                  <div class="card__site">
+                    <template v-if="singleSelectedCountry">
+                      <a
+                        v-if="product.sites[0].productUrl"
+                        class="button"
+                        :href="product.sites[0].productUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        @click.stop
+                      >Открыть на сайте {{ product.sites[0].country }}</a>
+                      <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
+                    </template>
+                    <template v-else>
+                      <select v-model="product.selectedSiteCountry" class="site-select" :aria-label="'Выбрать сайт для ' + product.sku" @click.stop>
+                        <option v-for="site in product.sites" :key="site.country" :value="site.country">
+                          {{ site.country }} · {{ site.subscriptions }} {{ pluralizeSubscriptions(site.subscriptions) }}
+                        </option>
+                      </select>
+                      <a
+                        v-if="selectedSite(product).productUrl"
+                        class="button"
+                        :href="selectedSite(product).productUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        @click.stop
+                      >Открыть на сайте {{ selectedSite(product).country }}</a>
+                      <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
+                    </template>
+                  </div>
+                  <button class="card__details" type="button" @click.stop="openDetails(product)">
+                    Посмотреть подписчиков →
+                  </button>
                 </div>
-                <div class="card__site">
-                  <template v-if="selectedCountry">
-                    <a
-                      v-if="product.sites[0].productUrl"
-                      class="button"
-                      :href="product.sites[0].productUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      @click.stop
-                    >Открыть на сайте {{ product.sites[0].country }}</a>
-                    <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
-                  </template>
-                  <template v-else>
-                    <select v-model="product.selectedSiteCountry" class="site-select" :aria-label="'Выбрать сайт для ' + product.sku" @click.stop>
-                      <option v-for="site in product.sites" :key="site.country" :value="site.country">
-                        {{ site.country }} · {{ site.subscriptions }} {{ pluralizeSubscriptions(site.subscriptions) }}
-                      </option>
-                    </select>
-                    <a
-                      v-if="selectedSite(product).productUrl"
-                      class="button"
-                      :href="selectedSite(product).productUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      @click.stop
-                    >Открыть на сайте {{ selectedSite(product).country }}</a>
-                    <div v-else class="catalog-warning">Публичная ссылка недоступна</div>
-                  </template>
-                </div>
-                <button class="card__details" type="button" @click.stop="openDetails(product)">
-                  Посмотреть подписчиков →
-                </button>
               </div>
             </article>
           </div>
@@ -306,7 +319,7 @@ createApp({
         <div class="modal__head">
           <div>
             <h2 id="details-title" class="modal__title">{{ detailsProduct.title }}</h2>
-            <div class="modal__subtitle">SKU {{ detailsProduct.sku }} · {{ selectedCountry || 'все страны' }}</div>
+            <div class="modal__subtitle">SKU {{ detailsProduct.sku }} · {{ selectedCountriesLabel }}</div>
           </div>
           <button class="modal__close" type="button" aria-label="Закрыть" @click="closeDetails">✕</button>
         </div>
@@ -319,10 +332,10 @@ createApp({
               v-for="site in details.sites"
               :key="site.country"
               class="detail-site"
-              :class="{ 'detail-site--single': selectedCountry }"
+              :class="{ 'detail-site--single': singleSelectedCountry }"
             >
               <div class="detail-site__head">
-                <strong v-if="!selectedCountry">{{ site.country }} · {{ site.totalSubscriptions }} {{ pluralizeSubscriptions(site.totalSubscriptions) }}</strong>
+                <strong v-if="!singleSelectedCountry">{{ site.country }} · {{ site.totalSubscriptions }} {{ pluralizeSubscriptions(site.totalSubscriptions) }}</strong>
                 <span v-else>{{ site.totalSubscriptions }} {{ pluralizeSubscriptions(site.totalSubscriptions) }}</span>
                 <a v-if="site.productUrl" class="detail-link" :href="site.productUrl" target="_blank" rel="noopener noreferrer">
                   Открыть товар на сайте →

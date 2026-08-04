@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { fn, col } = require("sequelize");
+const { fn, col, Op } = require("sequelize");
 const Subscription = require("../models/Subscription");
 const { getShopifyConfig } = require("../config/shopify");
 
@@ -189,9 +189,16 @@ function buildCrossCountryProducts(countries) {
     .sort((a, b) => b.totalSubscriptions - a.totalSubscriptions);
 }
 
-async function getProductSubscriptionDetails(sku, country) {
+async function getProductSubscriptionDetails(sku, countries) {
   const where = { notification_sent: false, sku };
-  if (country) where.country = country;
+  const normalizedCountries = (Array.isArray(countries) ? countries : [countries])
+    .filter(Boolean)
+    .map((country) => String(country).trim().toUpperCase())
+    .filter((country, index, items) => country && items.indexOf(country) === index);
+  if (normalizedCountries.length === 1) where.country = normalizedCountries[0];
+  if (normalizedCountries.length > 1) {
+    where.country = { [Op.in]: normalizedCountries };
+  }
 
   const rows = await Subscription.findAll({
     attributes: [

@@ -1,4 +1,5 @@
 const request = require("supertest");
+const { Op } = require("sequelize");
 
 const mockFindOne = jest.fn();
 const mockFindAll = jest.fn();
@@ -117,6 +118,9 @@ test("serves the manager dashboard only with Basic Auth", async () => {
   expect(unauthorized.status).toBe(401);
   expect(authorized.status).toBe(200);
   expect(authorized.text).toContain("Подписки на товары");
+  expect(authorized.text).toContain(
+    "https://cdn.shopify.com/s/files/1/2223/8189/files/favicon_landing.png",
+  );
 });
 
 test("protects and serves the Vue manager assets", async () => {
@@ -157,4 +161,14 @@ test("returns protected subscriber details for a SKU", async () => {
     totalSubscriptions: 0,
     sites: [],
   });
+});
+
+test("accepts several countries for subscriber details", async () => {
+  const response = await request(app)
+    .get("/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT")
+    .auth("manager", "secret");
+
+  expect(response.status).toBe(200);
+  const where = mockFindAll.mock.calls[0][0].where;
+  expect(where.country[Op.in]).toEqual(["ES", "IT"]);
 });

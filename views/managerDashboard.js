@@ -5,6 +5,7 @@ function renderManagerDashboard() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ONKRON — Подписки на товары</title>
+  <link rel="icon" type="image/png" href="https://cdn.shopify.com/s/files/1/2223/8189/files/favicon_landing.png">
   <link rel="stylesheet" href="/manager/assets/styles.css">
 </head>
 <body>

@@ -4,6 +4,7 @@ const mockFindAll = jest.fn();
 jest.mock("../models/Subscription", () => ({ findAll: mockFindAll }));
 
 const axios = require("axios");
+const { Op } = require("sequelize");
 const {
   buildCrossCountryProducts,
   clearProductCatalogCache,
@@ -200,4 +201,15 @@ test("returns subscriber details for a product and selected country", async () =
       }),
     ],
   });
+});
+
+test("filters subscriber details by several selected countries", async () => {
+  mockFindAll.mockResolvedValue([]);
+
+  await getProductSubscriptionDetails("BLACK", ["ES", "IT", "ES"]);
+
+  const where = mockFindAll.mock.calls[0][0].where;
+  expect(where.notification_sent).toBe(false);
+  expect(where.sku).toBe("BLACK");
+  expect(where.country[Op.in]).toEqual(["ES", "IT"]);
 });
