@@ -29,27 +29,61 @@ function checkBitrixConfiguration() {
     : { status: "error", missing, countriesUsingFallback };
 }
 
-async function createHealthReport(sequelize, oAuth2Client) {
-  const [database, gmail] = await Promise.all([
+function getCronStaleThresholdMs() {
+  const configuredHours = Number.parseInt(process.env.CRON_STALE_HOURS, 10);
+  const hours = configuredHours > 0 ? configuredHours : 26;
+  return hours * 60 * 60 * 1000;
+}
+
+async function checkCronHealth(CronRun) {
+  if (!CronRun) return { status: "unknown" };
+
+  try {
+    const lastRun = await CronRun.findOne({ order: [["started_at", "DESC"]] });
+    if (!lastRun) {
+      return { status: "unknown", message: "No cron runs recorded yet" };
+    }
+
+    const ageMs = Date.now() - new Date(lastRun.started_at).getTime();
+    const stale = ageMs > getCronStaleThresholdMs();
+
+    return {
+      status: stale ? "stale" : "ok",
+      lastRunAt: lastRun.started_at,
+      subsChecked: lastRun.subs_checked,
+      sentCount: lastRun.sent_count,
+      errorsCount: lastRun.errors_count,
+    };
+  } catch (error) {
+    return { status: "error", error: error.message };
+  }
+}
+
+async function createHealthReport(sequelize, oAuth2Client, { CronRun } = {}) {
+  const [database, gmail, cron] = await Promise.all([
     checkConnection(() => sequelize.authenticate()),
     checkConnection(async () => {
       const { token } = await oAuth2Client.getAccessToken();
       if (!token) throw new Error("Gmail access token is unavailable");
     }),
+    checkCronHealth(CronRun),
   ]);
   const bitrix = checkBitrixConfiguration();
   const healthy =
     database.status === "connected" &&
     gmail.status === "connected" &&
-    bitrix.status === "configured";
+    bitrix.status === "configured" &&
+    cron.status !== "stale" &&
+    cron.status !== "error";
 
   return {
     status: healthy ? "healthy" : "unhealthy",
     database,
     gmail,
     bitrix,
+    cron,
     timestamp: new Date().toISOString(),
   };
 }
 
-module.exports = { checkBitrixConfiguration, createHealthReport };
+module.exports = { checkBitrixConfiguration, checkCronHealth, createHealthReport };

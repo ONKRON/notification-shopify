@@ -24,6 +24,7 @@ const {
 const { createHealthReport } = require("../services/health");
 const { getCronConfig } = require("../config/runtime");
 const { maskEmail } = require("../utils/privacy");
+const { sendWeeklyAnalyticsDigest } = require("../services/digest");
 
 const app = express();
 const PORT = process.env.PORT_CHECKER || 5000;
@@ -350,6 +351,33 @@ function scheduleAvailabilityChecks() {
   );
 }
 
+let digestRunning = false;
+function scheduleWeeklyDigest() {
+  const cronConfig = getCronConfig();
+
+  return cron.schedule(
+    process.env.ANALYTICS_DIGEST_CRON || "0 9 * * 1",
+    async () => {
+      if (digestRunning) {
+        console.warn("Weekly analytics digest is already running; skipping.");
+        return;
+      }
+
+      digestRunning = true;
+      console.log("Sending weekly analytics digest...");
+      try {
+        await sendWeeklyAnalyticsDigest();
+        console.log("✅ Weekly analytics digest sent");
+      } catch (error) {
+        console.error("Failed to send weekly analytics digest:", error.message);
+      } finally {
+        digestRunning = false;
+      }
+    },
+    { timezone: cronConfig.timezone },
+  );
+}
+
 // Функция отправки уведомлений по электронной почте
 async function sendNotification(email, notification) {
   await sendEmailDirect(email, {
@@ -362,7 +390,7 @@ async function sendNotification(email, notification) {
 
 // Health check endpoint
 app.get("/health", async (req, res) => {
-  const report = await createHealthReport(sequelize, oAuth2Client);
+  const report = await createHealthReport(sequelize, oAuth2Client, { CronRun });
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
@@ -387,6 +415,7 @@ async function startWorkerServer() {
   console.log("Worker database connection established");
   await testGmailConnection();
   scheduleAvailabilityChecks();
+  scheduleWeeklyDigest();
 
   return app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
@@ -404,5 +433,6 @@ module.exports = {
   app,
   checkProductAvailability,
   scheduleAvailabilityChecks,
+  scheduleWeeklyDigest,
   startWorkerServer,
 };

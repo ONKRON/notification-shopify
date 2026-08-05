@@ -53,7 +53,7 @@ function buildProductSubscriptionMessage(subscription, shopifyStore) {
   ].join("\n");
 }
 
-async function sendProductSubscriptionNotification(subscription, shopifyStore) {
+async function sendBitrixMessage(dialogId, message) {
   const webhookUrl = process.env.BITRIX24_BOT_MESSAGE_WEBHOOK;
   if (!webhookUrl) {
     throw new Error(
@@ -76,14 +76,13 @@ async function sendProductSubscriptionNotification(subscription, shopifyStore) {
     );
   }
 
-  const managerDialogId = getManagerDialogId(subscription.country);
   const endpoint = `${webhookUrl.replace(/\/+$/, "")}/imbot.message.add`;
   const response = await axios.post(
     endpoint,
     {
       BOT_ID: Number(botId),
-      DIALOG_ID: String(managerDialogId),
-      MESSAGE: buildProductSubscriptionMessage(subscription, shopifyStore),
+      DIALOG_ID: String(dialogId),
+      MESSAGE: message,
       CLIENT_ID: botClientId,
       SYSTEM: "N",
       URL_PREVIEW: "N",
@@ -98,6 +97,22 @@ async function sendProductSubscriptionNotification(subscription, shopifyStore) {
   }
 
   return response.data && response.data.result;
+}
+
+function getDigestDialogId() {
+  return (
+    process.env.BITRIX_ANALYTICS_DIGEST_DIALOG_ID ||
+    process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER ||
+    DEFAULT_FALLBACK_MANAGER_DIALOG_ID
+  );
+}
+
+async function sendProductSubscriptionNotification(subscription, shopifyStore) {
+  const managerDialogId = getManagerDialogId(subscription.country);
+  return sendBitrixMessage(
+    managerDialogId,
+    buildProductSubscriptionMessage(subscription, shopifyStore),
+  );
 }
 
 async function deliverProductSubscriptionNotification(subscription, shopifyStore) {
@@ -142,7 +157,9 @@ async function deliverProductSubscriptionNotification(subscription, shopifyStore
 module.exports = {
   buildProductSubscriptionMessage,
   deliverProductSubscriptionNotification,
+  getDigestDialogId,
   getManagerDialogId,
   getMaxNotificationAttempts,
+  sendBitrixMessage,
   sendProductSubscriptionNotification,
 };

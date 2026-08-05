@@ -1,10 +1,22 @@
-const { createApp, ref, onMounted } = Vue;
+const { createApp, ref, computed, onMounted } = Vue;
 
 createApp({
   setup() {
     const data = ref(null);
     const loading = ref(true);
     const error = ref("");
+
+    const maxTrendValue = computed(() => {
+      if (!data.value) return 0;
+      return data.value.dailyTrend.reduce(
+        (max, point) => Math.max(max, point.subscribed, point.sent),
+        0,
+      );
+    });
+    const barHeight = (value) =>
+      maxTrendValue.value > 0 ? Math.max((value / maxTrendValue.value) * 100, value > 0 ? 4 : 0) : 0;
+    const formatDay = (day) =>
+      new Date(day).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
@@ -52,7 +64,9 @@ createApp({
       loading,
       error,
       formatDate,
+      formatDay,
       formatDuration,
+      barHeight,
       managerStatusLabels,
       loadAnalytics,
     };
@@ -69,6 +83,7 @@ createApp({
           <button class="button" type="button" :disabled="loading" @click="loadAnalytics">
             {{ loading ? 'Обновляем…' : 'Обновить' }}
           </button>
+          <a class="button" href="/download-analytics-csv">Скачать CSV</a>
         </div>
       </div>
       <div class="header__nav-bar">
@@ -93,6 +108,25 @@ createApp({
         </div>
 
         <section class="section">
+          <div class="section__head"><h2>Тренд за 30 дней</h2></div>
+          <div class="trend">
+            <div
+              v-for="point in data.dailyTrend"
+              :key="point.day"
+              class="trend__bar"
+              :title="formatDay(point.day) + ': ' + point.subscribed + ' подписок, ' + point.sent + ' отправок'"
+            >
+              <div class="trend__col trend__col--subscribed" :style="{ height: barHeight(point.subscribed) + '%' }"></div>
+              <div class="trend__col trend__col--sent" :style="{ height: barHeight(point.sent) + '%' }"></div>
+            </div>
+          </div>
+          <div class="trend__legend">
+            <span class="trend__legend-item trend__legend-item--subscribed">Подписки</span>
+            <span class="trend__legend-item trend__legend-item--sent">Отправки</span>
+          </div>
+        </section>
+
+        <section class="section">
           <div class="section__head"><h2>Топ SKU по подпискам</h2></div>
           <div class="table-wrap">
             <table class="table">
@@ -110,6 +144,24 @@ createApp({
         </section>
 
         <section class="section">
+          <div class="section__head"><h2>Время ожидания по SKU</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>SKU</th><th>Страна</th><th>Отправок</th><th>Среднее ожидание</th></tr></thead>
+              <tbody>
+                <tr v-for="row in data.waitTimeBySku" :key="row.country + row.sku">
+                  <td>{{ row.sku }}</td>
+                  <td>{{ row.country }}</td>
+                  <td>{{ row.sentCount }}</td>
+                  <td>{{ formatDuration(row.avgWaitMs) }}</td>
+                </tr>
+                <tr v-if="!data.waitTimeBySku.length"><td colspan="4" class="table__empty">Нет данных</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section">
           <div class="section__head"><h2>Ошибки по странам</h2></div>
           <div class="table-wrap">
             <table class="table">
@@ -120,6 +172,43 @@ createApp({
                   <td>{{ row.error_count }}</td>
                 </tr>
                 <tr v-if="!data.errorsByCountry.length"><td colspan="2" class="table__empty">Нет ошибок</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section__head"><h2>Требует внимания</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Email</th><th>SKU</th><th>Страна</th><th>Попыток письма</th><th>Ошибка письма</th><th>Bitrix</th><th>Обновлено</th></tr></thead>
+              <tbody>
+                <tr v-for="row in data.subscriptionsNeedingAttention" :key="row.id">
+                  <td>{{ row.email }}</td>
+                  <td>{{ row.sku }}</td>
+                  <td>{{ row.country }}</td>
+                  <td>{{ row.notification_attempts }}</td>
+                  <td>{{ row.notification_last_error || '—' }}</td>
+                  <td>{{ managerStatusLabels[row.manager_notification_status] || row.manager_notification_status }}</td>
+                  <td>{{ formatDate(row.updatedAt) }}</td>
+                </tr>
+                <tr v-if="!data.subscriptionsNeedingAttention.length"><td colspan="7" class="table__empty">Проблем не найдено</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section__head"><h2>Проблемные email</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Email</th><th>Ошибок</th></tr></thead>
+              <tbody>
+                <tr v-for="row in data.problemEmails" :key="row.email">
+                  <td>{{ row.email }}</td>
+                  <td>{{ row.error_count }}</td>
+                </tr>
+                <tr v-if="!data.problemEmails.length"><td colspan="2" class="table__empty">Нет данных</td></tr>
               </tbody>
             </table>
           </div>

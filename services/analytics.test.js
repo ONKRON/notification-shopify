@@ -1,0 +1,180 @@
+const { Op } = require("sequelize");
+
+const mockSubscriptionCount = jest.fn();
+const mockSubscriptionFindAll = jest.fn();
+const mockCronRunFindAll = jest.fn();
+const mockSequelizeQuery = jest.fn();
+
+jest.mock("../models/Subscription", () => ({
+  count: (...args) => mockSubscriptionCount(...args),
+  findAll: (...args) => mockSubscriptionFindAll(...args),
+}));
+
+jest.mock("../models/CronRun", () => ({
+  findAll: (...args) => mockCronRunFindAll(...args),
+}));
+
+jest.mock("../config/database", () => ({
+  query: (...args) => mockSequelizeQuery(...args),
+}));
+
+const {
+  getFunnelCounts,
+  getAvgWaitTimeMs,
+  getErrorRate30d,
+  getTopSkus,
+  getErrorsByCountry,
+  getManagerNotificationStats,
+  getSubscriptionsNeedingAttention,
+  getProblemEmails,
+  getDailyTrend,
+  getWaitTimeBySku,
+  getRecentCronRuns,
+  getAnalyticsSummary,
+} = require("./analytics");
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+test("getFunnelCounts calls Subscription.count for each window", async () => {
+  mockSubscriptionCount
+    .mockResolvedValueOnce(5)
+    .mockResolvedValueOnce(1)
+    .mockResolvedValueOnce(2)
+    .mockResolvedValueOnce(3);
+
+  await expect(getFunnelCounts()).resolves.toEqual({
+    totalActiveSubscriptions: 5,
+    sentLast24h: 1,
+    sentLast7d: 2,
+    sentLast30d: 3,
+  });
+  expect(mockSubscriptionCount).toHaveBeenCalledTimes(4);
+});
+
+test("getAvgWaitTimeMs returns null when there is no data", async () => {
+  mockSequelizeQuery.mockResolvedValue([[{ avg_wait_ms: null }]]);
+  await expect(getAvgWaitTimeMs()).resolves.toBeNull();
+});
+
+test("getAvgWaitTimeMs rounds the average", async () => {
+  mockSequelizeQuery.mockResolvedValue([[{ avg_wait_ms: "1234.6" }]]);
+  await expect(getAvgWaitTimeMs()).resolves.toBe(1235);
+});
+
+test("getErrorRate30d computes a percentage", async () => {
+  mockSubscriptionCount.mockResolvedValueOnce(1).mockResolvedValueOnce(3);
+  await expect(getErrorRate30d()).resolves.toBe(25);
+});
+
+test("getErrorRate30d returns 0 when there is no data at all", async () => {
+  mockSubscriptionCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+  await expect(getErrorRate30d()).resolves.toBe(0);
+});
+
+test("getTopSkus delegates to Subscription.findAll", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([
+    { country: "US", sku: "TS1", total_count: "3" },
+  ]);
+  await expect(getTopSkus()).resolves.toEqual([
+    { country: "US", sku: "TS1", total_count: "3" },
+  ]);
+  expect(mockSubscriptionFindAll).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { notification_sent: false } }),
+  );
+});
+
+test("getErrorsByCountry groups by country", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([
+    { country: "DE", error_count: "2" },
+  ]);
+  await expect(getErrorsByCountry()).resolves.toEqual([
+    { country: "DE", error_count: "2" },
+  ]);
+});
+
+test("getManagerNotificationStats groups by status", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([
+    { manager_notification_status: "sent", count: "4" },
+  ]);
+  await expect(getManagerNotificationStats()).resolves.toEqual([
+    { manager_notification_status: "sent", count: "4" },
+  ]);
+});
+
+test("getSubscriptionsNeedingAttention filters on errors or failed manager status", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([{ id: 1, email: "a@b.com" }]);
+  const result = await getSubscriptionsNeedingAttention();
+  expect(result).toEqual([{ id: 1, email: "a@b.com" }]);
+  const callArgs = mockSubscriptionFindAll.mock.calls[0][0];
+  expect(callArgs.where[Op.or]).toHaveLength(2);
+});
+
+test("getProblemEmails groups by email", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([
+    { email: "bad@example.com", error_count: "5" },
+  ]);
+  await expect(getProblemEmails()).resolves.toEqual([
+    { email: "bad@example.com", error_count: "5" },
+  ]);
+});
+
+test("getDailyTrend fills gaps with zero and keeps the requested window length", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  mockSequelizeQuery
+    .mockResolvedValueOnce([[{ day: today, count: "3" }]])
+    .mockResolvedValueOnce([[{ day: today, count: "1" }]]);
+
+  const trend = await getDailyTrend(5);
+  expect(trend).toHaveLength(5);
+  expect(trend[trend.length - 1]).toEqual({
+    day: today,
+    subscribed: 3,
+    sent: 1,
+  });
+  expect(trend[0]).toEqual({
+    day: expect.any(String),
+    subscribed: 0,
+    sent: 0,
+  });
+});
+
+test("getWaitTimeBySku maps and rounds the raw rows", async () => {
+  mockSequelizeQuery.mockResolvedValue([
+    [{ sku: "TS1", country: "US", sent_count: "4", avg_wait_ms: "1500.4" }],
+  ]);
+  await expect(getWaitTimeBySku()).resolves.toEqual([
+    { sku: "TS1", country: "US", sentCount: 4, avgWaitMs: 1500 },
+  ]);
+});
+
+test("getRecentCronRuns delegates to CronRun.findAll", async () => {
+  mockCronRunFindAll.mockResolvedValue([{ id: 1 }]);
+  await expect(getRecentCronRuns()).resolves.toEqual([{ id: 1 }]);
+});
+
+test("getAnalyticsSummary combines every metric into one object", async () => {
+  mockSubscriptionCount.mockResolvedValue(0);
+  mockSequelizeQuery.mockResolvedValue([[]]);
+  mockSubscriptionFindAll.mockResolvedValue([]);
+  mockCronRunFindAll.mockResolvedValue([]);
+
+  const summary = await getAnalyticsSummary();
+  expect(summary).toEqual(
+    expect.objectContaining({
+      totalActiveSubscriptions: 0,
+      avgWaitTimeMs: null,
+      errorRate30d: 0,
+      topSkus: [],
+      errorsByCountry: [],
+      managerNotificationStats: [],
+      subscriptionsNeedingAttention: [],
+      problemEmails: [],
+      recentCronRuns: [],
+    }),
+  );
+  expect(summary.dailyTrend).toHaveLength(30);
+  expect(summary.waitTimeBySku).toEqual([]);
+  expect(typeof summary.generatedAt).toBe("string");
+});

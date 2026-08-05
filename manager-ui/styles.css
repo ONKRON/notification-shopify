@@ -181,6 +181,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .table th { color: var(--muted); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
 .table tr:last-child td { border-bottom: none; }
 .table__empty { color: var(--muted); text-align: center; white-space: normal; }
+.trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+  padding: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.trend__bar { display: flex; flex: 0 0 auto; align-items: flex-end; gap: 2px; height: 100%; }
+.trend__col { width: 5px; min-height: 1px; border-radius: 2px 2px 0 0; }
+.trend__col--subscribed { background: var(--accent); }
+.trend__col--sent { background: var(--accent-dark); }
+.trend__legend { display: flex; gap: 18px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.trend__legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.trend__legend-item::before { display: inline-block; width: 10px; height: 10px; border-radius: 3px; content: ""; }
+.trend__legend-item--subscribed::before { background: var(--accent); }
+.trend__legend-item--sent::before { background: var(--accent-dark); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 18px; align-items: stretch; }
 
 .card {

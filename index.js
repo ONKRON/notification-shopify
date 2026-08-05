@@ -4,6 +4,7 @@ const { google } = require("googleapis");
 const cors = require("cors");
 const sequelize = require("./config/database");
 const Subscription = require("./models/Subscription");
+const CronRun = require("./models/CronRun");
 const { getShopifyConfig } = require("./config/shopify");
 const {
   getSubscriptionConfirmationTemplate,
@@ -129,7 +130,7 @@ app.use(express.json());
 app.use(cors());
 
 app.get("/health", async (req, res) => {
-  const report = await createHealthReport(sequelize, oAuth2Client);
+  const report = await createHealthReport(sequelize, oAuth2Client, { CronRun });
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
@@ -169,6 +170,73 @@ app.get("/api/manager/analytics", async (req, res) => {
   } catch (error) {
     console.error("Failed to build analytics summary:", error.message);
     res.status(500).json({ message: "Failed to load analytics" });
+  }
+});
+
+function buildAnalyticsCsv(summary) {
+  const sections = [];
+
+  sections.push(
+    "Топ SKU",
+    "SKU;Страна;Подписок",
+    ...summary.topSkus.map((row) => `${row.sku};${row.country};${row.total_count}`),
+    "",
+  );
+
+  sections.push(
+    "Время ожидания по SKU",
+    "SKU;Страна;Отправок;Среднее ожидание (мс)",
+    ...summary.waitTimeBySku.map(
+      (row) => `${row.sku};${row.country};${row.sentCount};${row.avgWaitMs}`,
+    ),
+    "",
+  );
+
+  sections.push(
+    "Ошибки по странам",
+    "Страна;Ошибок",
+    ...summary.errorsByCountry.map((row) => `${row.country};${row.error_count}`),
+    "",
+  );
+
+  sections.push(
+    "Проблемные email",
+    "Email;Ошибок",
+    ...summary.problemEmails.map((row) => `${row.email};${row.error_count}`),
+    "",
+  );
+
+  sections.push(
+    "Последние прогоны проверки наличия",
+    "Запуск;Проверено;Отправлено;Ошибок",
+    ...summary.recentCronRuns.map(
+      (row) =>
+        `${new Date(row.started_at).toISOString()};${row.subs_checked};${row.sent_count};${row.errors_count}`,
+    ),
+  );
+
+  return sections.join("\n");
+}
+
+app.get("/download-analytics-csv", async (req, res) => {
+  const filePath = path.join(__dirname, "analytics_stats.csv");
+  try {
+    const summary = await getAnalyticsSummary();
+    fs.writeFileSync(filePath, buildAnalyticsCsv(summary), "utf-8");
+    res.download(filePath, "analytics_stats.csv", (err) => {
+      if (err) {
+        console.error("Ошибка при скачивании CSV аналитики:", err);
+        if (!res.headersSent) {
+          res.status(500).send("Ошибка при скачивании файла.");
+        }
+      }
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr) console.error("Ошибка удаления временного файла:", unlinkErr);
+      });
+    });
+  } catch (error) {
+    console.error("Ошибка при формировании CSV аналитики:", error.message);
+    res.status(500).send("Ошибка при формировании CSV аналитики.");
   }
 });
 

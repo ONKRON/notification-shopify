@@ -83,6 +83,110 @@ async function getManagerNotificationStats() {
   });
 }
 
+async function getSubscriptionsNeedingAttention(limit = 20) {
+  return Subscription.findAll({
+    attributes: [
+      "id",
+      "email",
+      "sku",
+      "country",
+      "notification_attempts",
+      "notification_last_error",
+      "manager_notification_status",
+      "manager_notification_attempts",
+      "manager_notification_last_error",
+      "updatedAt",
+    ],
+    where: {
+      [Op.or]: [
+        { notification_last_error: { [Op.ne]: null } },
+        { manager_notification_status: "failed" },
+      ],
+    },
+    order: [["updatedAt", "DESC"]],
+    limit,
+    raw: true,
+  });
+}
+
+async function getProblemEmails(limit = 10) {
+  return Subscription.findAll({
+    attributes: ["email", [fn("COUNT", col("id")), "error_count"]],
+    where: { notification_last_error: { [Op.ne]: null } },
+    group: ["email"],
+    order: [[literal("error_count"), "DESC"]],
+    limit,
+    raw: true,
+  });
+}
+
+function buildDailySeries(days, subscribedRows, sentRows) {
+  const toKey = (value) => String(value).slice(0, 10);
+  const subscribedByDay = new Map(
+    subscribedRows.map((row) => [toKey(row.day), Number(row.count)]),
+  );
+  const sentByDay = new Map(
+    sentRows.map((row) => [toKey(row.day), Number(row.count)]),
+  );
+
+  const series = [];
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = new Date();
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCDate(date.getUTCDate() - offset);
+    const key = date.toISOString().slice(0, 10);
+    series.push({
+      day: key,
+      subscribed: subscribedByDay.get(key) || 0,
+      sent: sentByDay.get(key) || 0,
+    });
+  }
+  return series;
+}
+
+async function getDailyTrend(days = 30) {
+  const [subscribedRows] = await sequelize.query(
+    `SELECT DATE("createdAt") AS day, COUNT(*) AS count
+     FROM notifications
+     WHERE "createdAt" >= NOW() - (interval '1 day' * :days)
+     GROUP BY day
+     ORDER BY day`,
+    { replacements: { days } },
+  );
+  const [sentRows] = await sequelize.query(
+    `SELECT DATE(notification_sent_at) AS day, COUNT(*) AS count
+     FROM notifications
+     WHERE notification_sent_at IS NOT NULL
+       AND notification_sent_at >= NOW() - (interval '1 day' * :days)
+     GROUP BY day
+     ORDER BY day`,
+    { replacements: { days } },
+  );
+
+  return buildDailySeries(days, subscribedRows, sentRows);
+}
+
+async function getWaitTimeBySku(limit = 15) {
+  const [rows] = await sequelize.query(
+    `SELECT sku, country,
+            COUNT(*) AS sent_count,
+            AVG(EXTRACT(EPOCH FROM (notification_sent_at - "createdAt")) * 1000) AS avg_wait_ms
+     FROM notifications
+     WHERE notification_sent = true
+       AND notification_sent_at IS NOT NULL
+     GROUP BY sku, country
+     ORDER BY avg_wait_ms DESC
+     LIMIT :limit`,
+    { replacements: { limit } },
+  );
+  return rows.map((row) => ({
+    sku: row.sku,
+    country: row.country,
+    sentCount: Number(row.sent_count),
+    avgWaitMs: Math.round(Number(row.avg_wait_ms)),
+  }));
+}
+
 async function getRecentCronRuns(limit = 20) {
   return CronRun.findAll({
     order: [["started_at", "DESC"]],
@@ -99,6 +203,10 @@ async function getAnalyticsSummary() {
     topSkus,
     errorsByCountry,
     managerNotificationStats,
+    subscriptionsNeedingAttention,
+    problemEmails,
+    dailyTrend,
+    waitTimeBySku,
     recentCronRuns,
   ] = await Promise.all([
     getFunnelCounts(),
@@ -107,6 +215,10 @@ async function getAnalyticsSummary() {
     getTopSkus(),
     getErrorsByCountry(),
     getManagerNotificationStats(),
+    getSubscriptionsNeedingAttention(),
+    getProblemEmails(),
+    getDailyTrend(),
+    getWaitTimeBySku(),
     getRecentCronRuns(),
   ]);
 
@@ -117,9 +229,26 @@ async function getAnalyticsSummary() {
     topSkus,
     errorsByCountry,
     managerNotificationStats,
+    subscriptionsNeedingAttention,
+    problemEmails,
+    dailyTrend,
+    waitTimeBySku,
     recentCronRuns,
     generatedAt: new Date().toISOString(),
   };
 }
 
-module.exports = { getAnalyticsSummary };
+module.exports = {
+  getAnalyticsSummary,
+  getFunnelCounts,
+  getAvgWaitTimeMs,
+  getErrorRate30d,
+  getTopSkus,
+  getErrorsByCountry,
+  getManagerNotificationStats,
+  getSubscriptionsNeedingAttention,
+  getProblemEmails,
+  getDailyTrend,
+  getWaitTimeBySku,
+  getRecentCronRuns,
+};

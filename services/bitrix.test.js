@@ -4,7 +4,9 @@ const axios = require("axios");
 const {
   buildProductSubscriptionMessage,
   deliverProductSubscriptionNotification,
+  getDigestDialogId,
   getManagerDialogId,
+  sendBitrixMessage,
   sendProductSubscriptionNotification,
 } = require("./bitrix");
 
@@ -146,6 +148,45 @@ test("tracks a successful Bitrix delivery", async () => {
       manager_notification_last_error: null,
     }),
   );
+});
+
+test("sendBitrixMessage posts an arbitrary message to a given dialog", async () => {
+  process.env.BITRIX24_BOT_MESSAGE_WEBHOOK =
+    "https://example.bitrix24.com/rest/1/webhook-token";
+  process.env.BITRIX24_BOT_ID = "26984";
+  process.env.BITRIX24_BOT_CLIENT_ID = "onkron_notify_bot";
+  axios.post.mockResolvedValue({ data: { result: 999 } });
+
+  await expect(sendBitrixMessage("555", "digest text")).resolves.toBe(999);
+  expect(axios.post).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ DIALOG_ID: "555", MESSAGE: "digest text" }),
+    expect.any(Object),
+  );
+});
+
+describe("getDigestDialogId", () => {
+  const DIGEST_ENV = "BITRIX_ANALYTICS_DIGEST_DIALOG_ID";
+  const originalDigestEnv = process.env[DIGEST_ENV];
+
+  afterEach(() => {
+    if (originalDigestEnv === undefined) delete process.env[DIGEST_ENV];
+    else process.env[DIGEST_ENV] = originalDigestEnv;
+  });
+
+  test("prefers the dedicated digest dialog id", () => {
+    process.env[DIGEST_ENV] = "777";
+    expect(getDigestDialogId()).toBe("777");
+  });
+
+  test("falls back to the manager fallback, then the default", () => {
+    delete process.env[DIGEST_ENV];
+    delete process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER;
+    expect(getDigestDialogId()).toBe("17171");
+
+    process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER = "1377";
+    expect(getDigestDialogId()).toBe("1377");
+  });
 });
 
 test("tracks a failed Bitrix delivery for a later retry", async () => {
