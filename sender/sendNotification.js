@@ -6,6 +6,7 @@ const cron = require("node-cron");
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
 const Subscription = require("../models/Subscription");
+const CronRun = require("../models/CronRun");
 const { getShopifyConfig } = require("../config/shopify");
 const {
   getAvailabilityNotificationTemplate,
@@ -188,6 +189,7 @@ async function fetchWithRetry(url, headers, retries = 3, delayMs = 5000) {
 }
 
 async function checkProductAvailability() {
+  const stats = { checked: 0, sent: 0, errors: 0 };
   try {
     const maxManagerNotificationAttempts = getMaxNotificationAttempts();
     const subscriptions = await Subscription.findAll({
@@ -205,6 +207,7 @@ async function checkProductAvailability() {
     });
 
     for (const subscription of subscriptions) {
+      stats.checked += 1;
       console.log("Checking product availability", {
         id: subscription.id,
         country: subscription.country,
@@ -270,7 +273,9 @@ async function checkProductAvailability() {
                 { subject, text, html },
                 sendNotification,
               );
+              stats.sent += 1;
             } catch (error) {
+              stats.errors += 1;
               console.error(
                 `Failed to notify subscription ${subscription.id}:`,
                 error.message,
@@ -287,6 +292,7 @@ async function checkProductAvailability() {
           );
         }
       } catch (error) {
+        stats.errors += 1;
         console.error(
           `Error fetching product from ${subscription.country} for subscription ${subscription.inventory_id}:`,
           error.message
@@ -298,9 +304,12 @@ async function checkProductAvailability() {
       }
     }
   } catch (error) {
+    stats.errors += 1;
     console.error("Error fetching subscriptions:", error.message);
     await sendErrorNotification("Error in checkProductAvailability", error);
   }
+
+  return stats;
 }
 
 // Планировщик задач для ежедневной проверки
@@ -318,10 +327,23 @@ function scheduleAvailabilityChecks() {
 
       availabilityCheckRunning = true;
       console.log("Running product availability check...");
+      const startedAt = new Date();
+      let stats = { checked: 0, sent: 0, errors: 0 };
       try {
-        await checkProductAvailability();
+        stats = await checkProductAvailability();
       } finally {
         availabilityCheckRunning = false;
+        try {
+          await CronRun.create({
+            started_at: startedAt,
+            finished_at: new Date(),
+            subs_checked: stats.checked,
+            sent_count: stats.sent,
+            errors_count: stats.errors,
+          });
+        } catch (trackingError) {
+          console.error("Failed to record cron run:", trackingError.message);
+        }
       }
     },
     { timezone: cronConfig.timezone },

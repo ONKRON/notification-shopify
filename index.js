@@ -19,6 +19,8 @@ const {
   getProductSubscriptionDetails,
 } = require("./services/managerDashboard");
 const { renderManagerDashboard } = require("./views/managerDashboard");
+const { renderManagerAnalytics } = require("./views/managerAnalytics");
+const { getAnalyticsSummary } = require("./services/analytics");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const { Op, fn, col, literal } = require("sequelize");
@@ -154,6 +156,19 @@ app.get("/api/manager/subscriptions", async (req, res) => {
   } catch (error) {
     console.error("Failed to build manager dashboard:", error.message);
     res.status(500).json({ message: "Failed to load subscription dashboard" });
+  }
+});
+
+app.get("/manager/analytics", (req, res) => {
+  res.type("html").send(renderManagerAnalytics());
+});
+
+app.get("/api/manager/analytics", async (req, res) => {
+  try {
+    res.json(await getAnalyticsSummary());
+  } catch (error) {
+    console.error("Failed to build analytics summary:", error.message);
+    res.status(500).json({ message: "Failed to load analytics" });
   }
 });
 
