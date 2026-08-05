@@ -62,8 +62,6 @@ beforeEach(() => {
   mockDeliverManagerNotification.mockReset().mockResolvedValue(456);
   mockSubscriptionInstances.length = 0;
   process.env.SHOPIFY_DE_STORE = "de-store.myshopify.com";
-  process.env.MANAGER_DASHBOARD_USER = "manager";
-  process.env.MANAGER_DASHBOARD_PASSWORD = "secret";
 });
 
 test("creates a DE subscription without a nickname and sends both notifications", async () => {
@@ -109,33 +107,21 @@ test("rejects an unsupported country before writing to the database", async () =
   expect(mockFindOne).not.toHaveBeenCalled();
 });
 
-test("serves the manager dashboard only with Basic Auth", async () => {
-  const unauthorized = await request(app).get("/manager/subscriptions");
-  const authorized = await request(app)
-    .get("/manager/subscriptions")
-    .auth("manager", "secret");
+test("serves the manager dashboard without authentication", async () => {
+  const response = await request(app).get("/manager/subscriptions");
 
-  expect(unauthorized.status).toBe(401);
-  expect(authorized.status).toBe(200);
-  expect(authorized.text).toContain("Подписки на товары");
-  expect(authorized.text).toContain(
+  expect(response.status).toBe(200);
+  expect(response.text).toContain("Подписки на товары");
+  expect(response.text).toContain(
     "https://cdn.shopify.com/s/files/1/2223/8189/files/favicon_landing.png",
   );
 });
 
-test("protects and serves the Vue manager assets", async () => {
-  const unauthorized = await request(app).get("/manager/assets/app.js");
-  const appAsset = await request(app)
-    .get("/manager/assets/app.js")
-    .auth("manager", "secret");
-  const vueAsset = await request(app)
-    .get("/manager/vue.js")
-    .auth("manager", "secret");
-  const logoAsset = await request(app)
-    .get("/manager/assets/onkron-logo.svg")
-    .auth("manager", "secret");
+test("serves the Vue manager assets without authentication", async () => {
+  const appAsset = await request(app).get("/manager/assets/app.js");
+  const vueAsset = await request(app).get("/manager/vue.js");
+  const logoAsset = await request(app).get("/manager/assets/onkron-logo.svg");
 
-  expect(unauthorized.status).toBe(401);
   expect(appAsset.status).toBe(200);
   expect(appAsset.text).toContain("createApp");
   expect(vueAsset.status).toBe(200);
@@ -145,9 +131,7 @@ test("protects and serves the Vue manager assets", async () => {
 });
 
 test("returns aggregated manager dashboard data", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscriptions")
-    .auth("manager", "secret");
+  const response = await request(app).get("/api/manager/subscriptions");
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual(
@@ -155,10 +139,10 @@ test("returns aggregated manager dashboard data", async () => {
   );
 });
 
-test("returns protected subscriber details for a SKU", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscription-details?sku=TS2811-B&country=DE")
-    .auth("manager", "secret");
+test("returns subscriber details for a SKU without authentication", async () => {
+  const response = await request(app).get(
+    "/api/manager/subscription-details?sku=TS2811-B&country=DE",
+  );
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual({
@@ -169,9 +153,9 @@ test("returns protected subscriber details for a SKU", async () => {
 });
 
 test("accepts several countries for subscriber details", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT")
-    .auth("manager", "secret");
+  const response = await request(app).get(
+    "/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT",
+  );
 
   expect(response.status).toBe(200);
   const where = mockFindAll.mock.calls[0][0].where;

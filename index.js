@@ -13,7 +13,6 @@ const {
 } = require("./services/bitrix");
 const { createHealthReport } = require("./services/health");
 const { maskEmail } = require("./utils/privacy");
-const { requireManagerAuth } = require("./middleware/managerAuth");
 const {
   clearProductCatalogCache,
   getManagerDashboardData,
@@ -132,24 +131,23 @@ app.get("/health", async (req, res) => {
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
-app.get("/manager/vue.js", requireManagerAuth, (req, res) => {
+app.get("/manager/vue.js", (req, res) => {
   res.sendFile(require.resolve("vue/dist/vue.global.prod.js"));
 });
 
 app.use(
   "/manager/assets",
-  requireManagerAuth,
   express.static(path.join(__dirname, "manager-ui"), {
     fallthrough: false,
     maxAge: process.env.NODE_ENV === "production" ? "1h" : 0,
   }),
 );
 
-app.get("/manager/subscriptions", requireManagerAuth, (req, res) => {
+app.get("/manager/subscriptions", (req, res) => {
   res.type("html").send(renderManagerDashboard());
 });
 
-app.get("/api/manager/subscriptions", requireManagerAuth, async (req, res) => {
+app.get("/api/manager/subscriptions", async (req, res) => {
   try {
     if (req.query.refresh === "1") clearProductCatalogCache();
     res.json(await getManagerDashboardData());
@@ -161,7 +159,6 @@ app.get("/api/manager/subscriptions", requireManagerAuth, async (req, res) => {
 
 app.get(
   "/api/manager/subscription-details",
-  requireManagerAuth,
   async (req, res) => {
     try {
       const sku = String(req.query.sku || "").trim();
