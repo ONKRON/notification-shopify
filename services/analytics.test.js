@@ -23,6 +23,8 @@ const {
   getAvgWaitTimeMs,
   getErrorRate30d,
   getTopSkus,
+  getActiveSubscriptionsByCountry,
+  getTopSkusByCountry,
   getErrorsByCountry,
   getManagerNotificationStats,
   getSubscriptionsNeedingAttention,
@@ -83,6 +85,37 @@ test("getTopSkus delegates to Subscription.findAll", async () => {
   expect(mockSubscriptionFindAll).toHaveBeenCalledWith(
     expect.objectContaining({ where: { notification_sent: false } }),
   );
+});
+
+test("getActiveSubscriptionsByCountry delegates to Subscription.findAll", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([{ country: "DE", count: "33" }]);
+  await expect(getActiveSubscriptionsByCountry()).resolves.toEqual([
+    { country: "DE", count: "33" },
+  ]);
+  expect(mockSubscriptionFindAll).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { notification_sent: false } }),
+  );
+});
+
+test("getTopSkusByCountry groups ranked rows per country", async () => {
+  mockSequelizeQuery.mockResolvedValue([
+    [
+      { country: "DE", sku: "TS2210-B", total_count: "16" },
+      { country: "DE", sku: "TS73", total_count: "7" },
+      { country: "US", sku: "TS1552-W", total_count: "16" },
+    ],
+  ]);
+
+  await expect(getTopSkusByCountry()).resolves.toEqual([
+    {
+      country: "DE",
+      skus: [
+        { sku: "TS2210-B", totalCount: 16 },
+        { sku: "TS73", totalCount: 7 },
+      ],
+    },
+    { country: "US", skus: [{ sku: "TS1552-W", totalCount: 16 }] },
+  ]);
 });
 
 test("getErrorsByCountry groups by country", async () => {
@@ -167,6 +200,8 @@ test("getAnalyticsSummary combines every metric into one object", async () => {
       avgWaitTimeMs: null,
       errorRate30d: 0,
       topSkus: [],
+      activeByCountry: [],
+      topSkusByCountry: [],
       errorsByCountry: [],
       managerNotificationStats: [],
       subscriptionsNeedingAttention: [],

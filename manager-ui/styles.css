@@ -201,6 +201,20 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .trend__legend-item::before { display: inline-block; width: 10px; height: 10px; border-radius: 3px; content: ""; }
 .trend__legend-item--subscribed::before { background: var(--accent); }
 .trend__legend-item--sent::before { background: var(--accent-dark); }
+.digest-preview {
+  overflow-x: auto;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 18px; align-items: stretch; }
 
 .card {

@@ -6,6 +6,10 @@ createApp({
     const loading = ref(true);
     const error = ref("");
 
+    const digestPreview = ref(null);
+    const digestLoading = ref(false);
+    const digestError = ref("");
+
     const maxTrendValue = computed(() => {
       if (!data.value) return 0;
       return data.value.dailyTrend.reduce(
@@ -55,6 +59,29 @@ createApp({
       }
     }
 
+    async function loadDigestPreview() {
+      if (digestPreview.value) {
+        digestPreview.value = null;
+        return;
+      }
+
+      digestLoading.value = true;
+      digestError.value = "";
+      try {
+        const response = await fetch("/api/manager/digest/preview", {
+          cache: "no-store",
+        });
+        if (!response.ok)
+          throw new Error(`Не удалось загрузить превью: ${response.status}`);
+        const result = await response.json();
+        digestPreview.value = result.message;
+      } catch (loadError) {
+        digestError.value = loadError.message;
+      } finally {
+        digestLoading.value = false;
+      }
+    }
+
     onMounted(() => {
       loadAnalytics();
     });
@@ -63,6 +90,10 @@ createApp({
       data,
       loading,
       error,
+      digestPreview,
+      digestLoading,
+      digestError,
+      loadDigestPreview,
       formatDate,
       formatDay,
       formatDuration,
@@ -84,6 +115,9 @@ createApp({
             {{ loading ? 'Обновляем…' : 'Обновить' }}
           </button>
           <a class="button" href="/download-analytics-csv">Скачать CSV</a>
+          <button class="button" type="button" :disabled="digestLoading" @click="loadDigestPreview">
+            {{ digestLoading ? 'Считаем…' : (digestPreview ? 'Скрыть превью дайджеста' : 'Превью дайджеста') }}
+          </button>
         </div>
       </div>
       <div class="header__nav-bar">
@@ -95,6 +129,12 @@ createApp({
     </header>
 
     <main class="main">
+      <section v-if="digestError || digestPreview" class="section digest-preview-section">
+        <div class="section__head"><h2>Превью дайджеста</h2></div>
+        <div v-if="digestError" class="state state--error">{{ digestError }}</div>
+        <pre v-else class="digest-preview">{{ digestPreview }}</pre>
+      </section>
+
       <div v-if="loading" class="app-loading">Загружаем аналитику…</div>
       <div v-else-if="error" class="state state--error">{{ error }}</div>
       <template v-else-if="data">

@@ -47,6 +47,18 @@ jest.mock("./models/CronRun", () =>
   },
 );
 
+jest.mock("./models/DigestRun", () =>
+  class MockDigestRun {
+    static findOne() {
+      return Promise.resolve(null);
+    }
+
+    static create() {
+      return Promise.resolve({});
+    }
+  },
+);
+
 jest.mock("googleapis", () => ({
   google: {
     auth: {

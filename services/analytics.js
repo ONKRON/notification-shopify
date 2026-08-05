@@ -65,6 +65,42 @@ async function getTopSkus(limit = 10) {
   });
 }
 
+async function getActiveSubscriptionsByCountry() {
+  return Subscription.findAll({
+    attributes: ["country", [fn("COUNT", col("id")), "count"]],
+    where: { notification_sent: false },
+    group: ["country"],
+    order: [["country", "ASC"]],
+    raw: true,
+  });
+}
+
+async function getTopSkusByCountry(limitPerCountry = 5) {
+  const [rows] = await sequelize.query(
+    `SELECT country, sku, total_count FROM (
+       SELECT country, sku, COUNT(*) AS total_count,
+              ROW_NUMBER() OVER (PARTITION BY country ORDER BY COUNT(*) DESC) AS rank
+       FROM notifications
+       WHERE notification_sent = false
+       GROUP BY country, sku
+     ) ranked
+     WHERE rank <= :limitPerCountry
+     ORDER BY country, total_count DESC`,
+    { replacements: { limitPerCountry } },
+  );
+
+  const byCountry = new Map();
+  for (const row of rows) {
+    const country = row.country;
+    if (!byCountry.has(country)) byCountry.set(country, []);
+    byCountry.get(country).push({ sku: row.sku, totalCount: Number(row.total_count) });
+  }
+
+  return [...byCountry.entries()]
+    .map(([country, skus]) => ({ country, skus }))
+    .sort((a, b) => a.country.localeCompare(b.country));
+}
+
 async function getErrorsByCountry() {
   return Subscription.findAll({
     attributes: ["country", [fn("COUNT", col("id")), "error_count"]],
@@ -201,6 +237,8 @@ async function getAnalyticsSummary() {
     avgWaitTimeMs,
     errorRate30d,
     topSkus,
+    activeByCountry,
+    topSkusByCountry,
     errorsByCountry,
     managerNotificationStats,
     subscriptionsNeedingAttention,
@@ -213,6 +251,8 @@ async function getAnalyticsSummary() {
     getAvgWaitTimeMs(),
     getErrorRate30d(),
     getTopSkus(),
+    getActiveSubscriptionsByCountry(),
+    getTopSkusByCountry(),
     getErrorsByCountry(),
     getManagerNotificationStats(),
     getSubscriptionsNeedingAttention(),
@@ -227,6 +267,8 @@ async function getAnalyticsSummary() {
     avgWaitTimeMs,
     errorRate30d,
     topSkus,
+    activeByCountry,
+    topSkusByCountry,
     errorsByCountry,
     managerNotificationStats,
     subscriptionsNeedingAttention,
@@ -244,6 +286,8 @@ module.exports = {
   getAvgWaitTimeMs,
   getErrorRate30d,
   getTopSkus,
+  getActiveSubscriptionsByCountry,
+  getTopSkusByCountry,
   getErrorsByCountry,
   getManagerNotificationStats,
   getSubscriptionsNeedingAttention,

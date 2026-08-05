@@ -22,6 +22,7 @@ const {
 const { renderManagerDashboard } = require("./views/managerDashboard");
 const { renderManagerAnalytics } = require("./views/managerAnalytics");
 const { getAnalyticsSummary } = require("./services/analytics");
+const { buildDigestPreview } = require("./services/digest");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const { Op, fn, col, literal } = require("sequelize");
@@ -170,6 +171,16 @@ app.get("/api/manager/analytics", async (req, res) => {
   } catch (error) {
     console.error("Failed to build analytics summary:", error.message);
     res.status(500).json({ message: "Failed to load analytics" });
+  }
+});
+
+app.get("/api/manager/digest/preview", async (req, res) => {
+  try {
+    const { message, generatedAt } = await buildDigestPreview();
+    res.json({ message, generatedAt });
+  } catch (error) {
+    console.error("Failed to build digest preview:", error.message);
+    res.status(500).json({ message: "Failed to load digest preview" });
   }
 });
 
