@@ -107,15 +107,30 @@ test("formatDigestMessage marks an unchanged metric", () => {
   expect(message).toContain("Отправлено за 7 дней: 4 (→ без изменений)");
 });
 
+test("formatDigestMessage shows the comparison date when a previous digest exists", () => {
+  const previousSentAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const message = formatDigestMessage(summary, {}, previousSentAt);
+  expect(message).toContain("Сравнение с —");
+  expect(message).toContain("(7 дн назад)");
+});
+
+test("formatDigestMessage flags missing comparison data without a previous digest", () => {
+  const message = formatDigestMessage(summary, null, null);
+  expect(message).toContain("Сравнение — нет данных за прошлую неделю");
+});
+
 test("buildDigestPreview combines the current summary with the last stored one, without sending", async () => {
   mockGetAnalyticsSummary.mockResolvedValue(summary);
+  const previousSentAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   mockDigestRunFindOne.mockResolvedValue({
     summary: { totalActiveSubscriptions: 300 },
+    sent_at: previousSentAt,
   });
 
   const preview = await buildDigestPreview();
 
   expect(preview.message).toContain("(↑ +51 за неделю)");
+  expect(preview.message).toContain("Сравнение с —");
   expect(preview.summary).toBe(summary);
   expect(mockSendBitrixMessage).not.toHaveBeenCalled();
   expect(mockDigestRunCreate).not.toHaveBeenCalled();

@@ -31,6 +31,7 @@ const {
   getProblemEmails,
   getDailyTrend,
   getWaitTimeBySku,
+  getAllActiveSkusByCountry,
   getRecentCronRuns,
   getAnalyticsSummary,
 } = require("./analytics");
@@ -153,11 +154,17 @@ test("getProblemEmails groups by email", async () => {
   ]);
 });
 
-test("getDailyTrend fills gaps with zero and keeps the requested window length", async () => {
+test("getDailyTrend fills gaps with zero and attaches the SKU breakdown per day", async () => {
   const today = new Date().toISOString().slice(0, 10);
   mockSequelizeQuery
     .mockResolvedValueOnce([[{ day: today, count: "3" }]])
-    .mockResolvedValueOnce([[{ day: today, count: "1" }]]);
+    .mockResolvedValueOnce([[{ day: today, count: "1" }]])
+    .mockResolvedValueOnce([
+      [
+        { day: today, sku: "TS1", country: "US", count: "2" },
+        { day: today, sku: "TS2", country: "DE", count: "1" },
+      ],
+    ]);
 
   const trend = await getDailyTrend(5);
   expect(trend).toHaveLength(5);
@@ -165,11 +172,16 @@ test("getDailyTrend fills gaps with zero and keeps the requested window length",
     day: today,
     subscribed: 3,
     sent: 1,
+    skus: [
+      { sku: "TS1", country: "US", count: 2 },
+      { sku: "TS2", country: "DE", count: 1 },
+    ],
   });
   expect(trend[0]).toEqual({
     day: expect.any(String),
     subscribed: 0,
     sent: 0,
+    skus: [],
   });
 });
 
@@ -180,6 +192,27 @@ test("getWaitTimeBySku maps and rounds the raw rows", async () => {
   await expect(getWaitTimeBySku()).resolves.toEqual([
     { sku: "TS1", country: "US", sentCount: 4, avgWaitMs: 1500 },
   ]);
+});
+
+test("getWaitTimeBySku omits the LIMIT clause when called with null", async () => {
+  mockSequelizeQuery.mockResolvedValue([[]]);
+  await getWaitTimeBySku(null);
+  expect(mockSequelizeQuery.mock.calls[0][0]).not.toContain("LIMIT");
+});
+
+test("getAllActiveSkusByCountry returns every active SKU per country, uncapped", async () => {
+  mockSubscriptionFindAll.mockResolvedValue([
+    { country: "DE", sku: "TS1", total_count: "5" },
+    { country: "US", sku: "TS2", total_count: "3" },
+  ]);
+  await expect(getAllActiveSkusByCountry()).resolves.toEqual([
+    { country: "DE", sku: "TS1", total_count: "5" },
+    { country: "US", sku: "TS2", total_count: "3" },
+  ]);
+  expect(mockSubscriptionFindAll).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { notification_sent: false } }),
+  );
+  expect(mockSubscriptionFindAll.mock.calls[0][0].limit).toBeUndefined();
 });
 
 test("getRecentCronRuns delegates to CronRun.findAll", async () => {

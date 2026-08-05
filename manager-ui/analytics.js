@@ -22,6 +22,17 @@ createApp({
     const formatDay = (day) =>
       new Date(day).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 
+    const TREND_TOOLTIP_SKU_LIMIT = 8;
+    const formatTrendTooltip = (point) => {
+      const header = `${formatDay(point.day)}: ${point.subscribed} подписок, ${point.sent} отправок`;
+      if (!point.skus || !point.skus.length) return header;
+      const shown = point.skus.slice(0, TREND_TOOLTIP_SKU_LIMIT);
+      const lines = shown.map((row) => `  ${row.sku} (${row.country}) — ${row.count}`);
+      const hiddenCount = point.skus.length - shown.length;
+      if (hiddenCount > 0) lines.push(`  … и ещё ${hiddenCount}`);
+      return [header, ...lines].join("\n");
+    };
+
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
 
@@ -96,6 +107,7 @@ createApp({
       loadDigestPreview,
       formatDate,
       formatDay,
+      formatTrendTooltip,
       formatDuration,
       barHeight,
       managerStatusLabels,
@@ -114,10 +126,6 @@ createApp({
           <button class="button" type="button" :disabled="loading" @click="loadAnalytics">
             {{ loading ? 'Обновляем…' : 'Обновить' }}
           </button>
-          <a class="button" href="/download-analytics-csv">Скачать CSV</a>
-          <button class="button" type="button" :disabled="digestLoading" @click="loadDigestPreview">
-            {{ digestLoading ? 'Считаем…' : (digestPreview ? 'Скрыть превью дайджеста' : 'Превью дайджеста') }}
-          </button>
         </div>
       </div>
       <div class="header__nav-bar">
@@ -129,6 +137,27 @@ createApp({
     </header>
 
     <main class="main">
+      <section class="section actions-panel">
+        <div class="section__head"><h2>Отчёты и экспорт</h2></div>
+        <div class="actions-panel__grid">
+          <a class="action-card" href="/download-analytics-csv">
+            <span class="action-card__icon">📄</span>
+            <span class="action-card__label">Скачать CSV</span>
+            <span class="action-card__hint">Плоский файл, все секции подряд</span>
+          </a>
+          <a class="action-card" href="/download-analytics-excel">
+            <span class="action-card__icon">📊</span>
+            <span class="action-card__label">Скачать Excel</span>
+            <span class="action-card__hint">Отдельный лист на каждую страну</span>
+          </a>
+          <button class="action-card" type="button" :disabled="digestLoading" @click="loadDigestPreview">
+            <span class="action-card__icon">🤖</span>
+            <span class="action-card__label">{{ digestLoading ? 'Считаем…' : (digestPreview ? 'Скрыть превью дайджеста' : 'Превью дайджеста') }}</span>
+            <span class="action-card__hint">То же, что уходит в Bitrix по понедельникам</span>
+          </button>
+        </div>
+      </section>
+
       <section v-if="digestError || digestPreview" class="section digest-preview-section">
         <div class="section__head"><h2>Превью дайджеста</h2></div>
         <div v-if="digestError" class="state state--error">{{ digestError }}</div>
@@ -154,7 +183,7 @@ createApp({
               v-for="point in data.dailyTrend"
               :key="point.day"
               class="trend__bar"
-              :title="formatDay(point.day) + ': ' + point.subscribed + ' подписок, ' + point.sent + ' отправок'"
+              :title="formatTrendTooltip(point)"
             >
               <div class="trend__col trend__col--subscribed" :style="{ height: barHeight(point.subscribed) + '%' }"></div>
               <div class="trend__col trend__col--sent" :style="{ height: barHeight(point.sent) + '%' }"></div>

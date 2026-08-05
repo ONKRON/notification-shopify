@@ -156,7 +156,7 @@ async function getProblemEmails(limit = 10) {
   });
 }
 
-function buildDailySeries(days, subscribedRows, sentRows) {
+function buildDailySeries(days, subscribedRows, sentRows, subscribedSkuRows) {
   const toKey = (value) => String(value).slice(0, 10);
   const subscribedByDay = new Map(
     subscribedRows.map((row) => [toKey(row.day), Number(row.count)]),
@@ -164,6 +164,14 @@ function buildDailySeries(days, subscribedRows, sentRows) {
   const sentByDay = new Map(
     sentRows.map((row) => [toKey(row.day), Number(row.count)]),
   );
+  const skusByDay = new Map();
+  for (const row of subscribedSkuRows) {
+    const key = toKey(row.day);
+    if (!skusByDay.has(key)) skusByDay.set(key, []);
+    skusByDay
+      .get(key)
+      .push({ sku: row.sku, country: row.country, count: Number(row.count) });
+  }
 
   const series = [];
   for (let offset = days - 1; offset >= 0; offset--) {
@@ -175,6 +183,7 @@ function buildDailySeries(days, subscribedRows, sentRows) {
       day: key,
       subscribed: subscribedByDay.get(key) || 0,
       sent: sentByDay.get(key) || 0,
+      skus: skusByDay.get(key) || [],
     });
   }
   return series;
@@ -198,8 +207,16 @@ async function getDailyTrend(days = 30) {
      ORDER BY day`,
     { replacements: { days } },
   );
+  const [subscribedSkuRows] = await sequelize.query(
+    `SELECT DATE("createdAt") AS day, sku, country, COUNT(*) AS count
+     FROM notifications
+     WHERE "createdAt" >= NOW() - (interval '1 day' * :days)
+     GROUP BY day, sku, country
+     ORDER BY day, count DESC`,
+    { replacements: { days } },
+  );
 
-  return buildDailySeries(days, subscribedRows, sentRows);
+  return buildDailySeries(days, subscribedRows, sentRows, subscribedSkuRows);
 }
 
 async function getWaitTimeBySku(limit = 15) {
@@ -212,7 +229,7 @@ async function getWaitTimeBySku(limit = 15) {
        AND notification_sent_at IS NOT NULL
      GROUP BY sku, country
      ORDER BY avg_wait_ms DESC
-     LIMIT :limit`,
+     ${limit ? "LIMIT :limit" : ""}`,
     { replacements: { limit } },
   );
   return rows.map((row) => ({
@@ -221,6 +238,19 @@ async function getWaitTimeBySku(limit = 15) {
     sentCount: Number(row.sent_count),
     avgWaitMs: Math.round(Number(row.avg_wait_ms)),
   }));
+}
+
+async function getAllActiveSkusByCountry() {
+  return Subscription.findAll({
+    attributes: ["country", "sku", [fn("COUNT", col("id")), "total_count"]],
+    where: { notification_sent: false },
+    group: ["country", "sku"],
+    order: [
+      ["country", "ASC"],
+      [literal("total_count"), "DESC"],
+    ],
+    raw: true,
+  });
 }
 
 async function getRecentCronRuns(limit = 20) {
@@ -294,5 +324,6 @@ module.exports = {
   getProblemEmails,
   getDailyTrend,
   getWaitTimeBySku,
+  getAllActiveSkusByCountry,
   getRecentCronRuns,
 };

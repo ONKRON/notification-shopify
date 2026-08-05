@@ -63,7 +63,14 @@ function buildBar(percent, size = 10) {
 
 const DIVIDER = "=================================";
 
-function formatDigestMessage(summary, previousSummary = null) {
+function formatComparisonLine(previousSentAt) {
+  if (!previousSentAt) return "Сравнение — нет данных за прошлую неделю";
+  const previousDate = new Date(previousSentAt);
+  const daysAgo = Math.round((Date.now() - previousDate.getTime()) / (24 * 60 * 60 * 1000));
+  return `Сравнение с — ${formatReportDate(previousDate)} (${daysAgo} дн назад)`;
+}
+
+function formatDigestMessage(summary, previousSummary = null, previousSentAt = null) {
   const attentionCount = summary.subscriptionsNeedingAttention.length;
   const previousAttentionCount = previousSummary?.subscriptionsNeedingAttention?.length;
   const activeByCountryCode = new Map(
@@ -93,6 +100,7 @@ function formatDigestMessage(summary, previousSummary = null) {
   return [
     "📊 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ПО ПОДПИСКАМ",
     `Дата отчета — ${formatReportDate()}`,
+    formatComparisonLine(previousSentAt),
     DIVIDER,
     "",
     countryBlocks || "Нет данных по странам",
@@ -109,17 +117,19 @@ function formatDigestMessage(summary, previousSummary = null) {
   ].join("\n");
 }
 
-async function getPreviousSummary() {
+async function getPreviousDigestRun() {
   const lastRun = await DigestRun.findOne({ order: [["sent_at", "DESC"]] });
-  return lastRun ? lastRun.summary : null;
+  return lastRun
+    ? { summary: lastRun.summary, sentAt: lastRun.sent_at }
+    : { summary: null, sentAt: null };
 }
 
 async function buildDigestPreview() {
-  const [summary, previousSummary] = await Promise.all([
+  const [summary, previousRun] = await Promise.all([
     getAnalyticsSummary(),
-    getPreviousSummary(),
+    getPreviousDigestRun(),
   ]);
-  const message = formatDigestMessage(summary, previousSummary);
+  const message = formatDigestMessage(summary, previousRun.summary, previousRun.sentAt);
   return { message, summary, generatedAt: summary.generatedAt };
 }
 

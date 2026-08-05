@@ -21,8 +21,13 @@ const {
 } = require("./services/managerDashboard");
 const { renderManagerDashboard } = require("./views/managerDashboard");
 const { renderManagerAnalytics } = require("./views/managerAnalytics");
-const { getAnalyticsSummary } = require("./services/analytics");
+const {
+  getAnalyticsSummary,
+  getAllActiveSkusByCountry,
+  getWaitTimeBySku,
+} = require("./services/analytics");
 const { buildDigestPreview } = require("./services/digest");
+const { buildAnalyticsWorkbook } = require("./services/analyticsExcel");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const { Op, fn, col, literal } = require("sequelize");
@@ -248,6 +253,33 @@ app.get("/download-analytics-csv", async (req, res) => {
   } catch (error) {
     console.error("Ошибка при формировании CSV аналитики:", error.message);
     res.status(500).send("Ошибка при формировании CSV аналитики.");
+  }
+});
+
+app.get("/download-analytics-excel", async (req, res) => {
+  const filePath = path.join(__dirname, "analytics_stats.xlsx");
+  try {
+    const [summary, allSkusByCountry, allWaitTimeBySku] = await Promise.all([
+      getAnalyticsSummary(),
+      getAllActiveSkusByCountry(),
+      getWaitTimeBySku(null),
+    ]);
+    const workbook = buildAnalyticsWorkbook(summary, allSkusByCountry, allWaitTimeBySku);
+    await workbook.xlsx.writeFile(filePath);
+    res.download(filePath, "analytics_stats.xlsx", (err) => {
+      if (err) {
+        console.error("Ошибка при скачивании Excel аналитики:", err);
+        if (!res.headersSent) {
+          res.status(500).send("Ошибка при скачивании файла.");
+        }
+      }
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr) console.error("Ошибка удаления временного файла:", unlinkErr);
+      });
+    });
+  } catch (error) {
+    console.error("Ошибка при формировании Excel аналитики:", error.message);
+    res.status(500).send("Ошибка при формировании Excel аналитики.");
   }
 });
 

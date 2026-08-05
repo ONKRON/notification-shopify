@@ -201,6 +201,32 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .trend__legend-item::before { display: inline-block; width: 10px; height: 10px; border-radius: 3px; content: ""; }
 .trend__legend-item--subscribed::before { background: var(--accent); }
 .trend__legend-item--sent::before { background: var(--accent-dark); }
+.actions-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 14px;
+}
+.action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.action-card:hover, .action-card:focus-visible { transform: translateY(-2px); box-shadow: var(--shadow); outline: none; }
+.action-card:disabled { opacity: .6; cursor: wait; transform: none; box-shadow: none; }
+.action-card__icon { font-size: 22px; }
+.action-card__label { font-weight: 700; }
+.action-card__hint { color: var(--muted); font-size: 12px; }
 .digest-preview {
   overflow-x: auto;
   margin: 0;
