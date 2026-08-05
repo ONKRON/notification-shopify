@@ -1,5 +1,44 @@
 const { createApp, ref, computed, onMounted } = Vue;
 
+// Валидированная категориальная палитра (dataviz skill, references/palette.md) —
+// фиксированный порядок слотов, adjacent-pair CVD ΔE >= 8 в обоих режимах.
+const CATEGORICAL_COLORS = [
+  "#2a78d6", // blue
+  "#eb6834", // orange
+  "#1baf7a", // aqua
+  "#eda100", // yellow
+  "#e87ba4", // magenta
+  "#4a3aa7", // violet
+];
+
+const COUNTRY_NAMES = {
+  US: "США",
+  UK: "Великобритания",
+  DE: "Германия",
+  PL: "Польша",
+  FR: "Франция",
+  IT: "Италия",
+  ES: "Испания",
+};
+const countryName = (code) => COUNTRY_NAMES[code] || code;
+
+const TREND_CHART_LAYOUT = {
+  width: 640,
+  height: 220,
+  marginLeft: 42,
+  marginRight: 8,
+  marginTop: 12,
+  marginBottom: 28,
+};
+
+function niceMax(value) {
+  if (value <= 0) return 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  const normalized = value / magnitude;
+  const niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return niceNormalized * magnitude;
+}
+
 createApp({
   setup() {
     const data = ref(null);
@@ -10,15 +49,8 @@ createApp({
     const digestLoading = ref(false);
     const digestError = ref("");
 
-    const maxTrendValue = computed(() => {
-      if (!data.value) return 0;
-      return data.value.dailyTrend.reduce(
-        (max, point) => Math.max(max, point.subscribed, point.sent),
-        0,
-      );
-    });
-    const barHeight = (value) =>
-      maxTrendValue.value > 0 ? Math.max((value / maxTrendValue.value) * 100, value > 0 ? 4 : 0) : 0;
+    const topProductsCountry = ref(null);
+
     const formatDay = (day) =>
       new Date(day).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 
@@ -32,6 +64,106 @@ createApp({
       if (hiddenCount > 0) lines.push(`  … и ещё ${hiddenCount}`);
       return [header, ...lines].join("\n");
     };
+
+    const trendChart = computed(() => {
+      if (!data.value || !data.value.dailyTrend.length) return null;
+      const points = data.value.dailyTrend;
+      const { width, height, marginLeft, marginRight, marginTop, marginBottom } =
+        TREND_CHART_LAYOUT;
+      const plotWidth = width - marginLeft - marginRight;
+      const plotHeight = height - marginTop - marginBottom;
+      const maxValue = points.reduce(
+        (max, point) => Math.max(max, point.subscribed, point.sent),
+        0,
+      );
+      const yMax = niceMax(maxValue);
+      const groupWidth = plotWidth / points.length;
+      const barGap = Math.min(1.5, groupWidth / 6);
+      const barWidth = Math.max((groupWidth - barGap * 3) / 2, 1);
+
+      const bars = points.flatMap((point, index) => {
+        const groupX = marginLeft + index * groupWidth;
+        const subscribedHeight = (point.subscribed / yMax) * plotHeight;
+        const sentHeight = (point.sent / yMax) * plotHeight;
+        return [
+          {
+            key: `${point.day}-sub`,
+            x: groupX + barGap,
+            y: marginTop + plotHeight - subscribedHeight,
+            width: barWidth,
+            height: subscribedHeight,
+            color: "var(--accent)",
+          },
+          {
+            key: `${point.day}-sent`,
+            x: groupX + barGap * 2 + barWidth,
+            y: marginTop + plotHeight - sentHeight,
+            width: barWidth,
+            height: sentHeight,
+            color: "var(--accent-dark)",
+          },
+        ];
+      });
+
+      const yTicks = [0, yMax / 2, yMax].map((value) => ({
+        value: Math.round(value),
+        y: marginTop + plotHeight - (value / yMax) * plotHeight,
+      }));
+
+      const xLabelStep = Math.max(1, Math.ceil(points.length / 6));
+      const xTicks = points
+        .map((point, index) => ({ point, index }))
+        .filter(({ index }) => index % xLabelStep === 0 || index === points.length - 1)
+        .map(({ point, index }) => ({
+          key: point.day,
+          label: formatDay(point.day),
+          x: marginLeft + index * groupWidth + groupWidth / 2,
+        }));
+
+      const hitAreas = points.map((point, index) => ({
+        key: `hit-${point.day}`,
+        x: marginLeft + index * groupWidth,
+        width: groupWidth,
+        tooltip: formatTrendTooltip(point),
+      }));
+
+      return {
+        ...TREND_CHART_LAYOUT,
+        plotHeight,
+        bars,
+        yTicks,
+        xTicks,
+        hitAreas,
+      };
+    });
+
+    const countryOptions = computed(() => {
+      if (!data.value) return [];
+      return [...data.value.topSkusByCountry]
+        .map((entry) => entry.country)
+        .sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
+    });
+
+    const topProductsForCountry = computed(() => {
+      if (!data.value) return [];
+      const entry = data.value.topSkusByCountry.find(
+        (item) => item.country === topProductsCountry.value,
+      );
+      return entry ? entry.skus : [];
+    });
+
+    const topProductsBars = computed(() => {
+      const max = topProductsForCountry.value.reduce(
+        (top, sku) => Math.max(top, sku.totalCount),
+        0,
+      );
+      return topProductsForCountry.value.map((sku, index) => ({
+        sku: sku.sku,
+        count: sku.totalCount,
+        color: CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length],
+        widthPct: max > 0 ? Math.max((sku.totalCount / max) * 100, 4) : 0,
+      }));
+    });
 
     const formatDate = (value) =>
       value ? new Date(value).toLocaleString("ru-RU") : "Дата неизвестна";
@@ -63,6 +195,11 @@ createApp({
         if (!response.ok)
           throw new Error(`Не удалось загрузить данные: ${response.status}`);
         data.value = await response.json();
+        if (!topProductsCountry.value && data.value.activeByCountry.length) {
+          topProductsCountry.value = [...data.value.activeByCountry].sort(
+            (a, b) => Number(b.count) - Number(a.count),
+          )[0].country;
+        }
       } catch (loadError) {
         error.value = loadError.message;
       } finally {
@@ -107,11 +244,14 @@ createApp({
       loadDigestPreview,
       formatDate,
       formatDay,
-      formatTrendTooltip,
       formatDuration,
-      barHeight,
       managerStatusLabels,
       loadAnalytics,
+      trendChart,
+      countryOptions,
+      countryName,
+      topProductsCountry,
+      topProductsBars,
     };
   },
   template: `
@@ -177,21 +317,86 @@ createApp({
         </div>
 
         <section class="section">
-          <div class="section__head"><h2>Тренд за 30 дней</h2></div>
-          <div class="trend">
-            <div
-              v-for="point in data.dailyTrend"
-              :key="point.day"
-              class="trend__bar"
-              :title="formatTrendTooltip(point)"
-            >
-              <div class="trend__col trend__col--subscribed" :style="{ height: barHeight(point.subscribed) + '%' }"></div>
-              <div class="trend__col trend__col--sent" :style="{ height: barHeight(point.sent) + '%' }"></div>
+          <div class="section__head"><h2>Тренд и топ товаров</h2></div>
+          <div class="chart-grid">
+            <div class="chart-card">
+              <h3 class="chart-card__title">Подписки и отправки за 30 дней</h3>
+              <svg
+                v-if="trendChart"
+                class="chart-svg"
+                :viewBox="'0 0 ' + trendChart.width + ' ' + trendChart.height"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="Тренд подписок и отправок за 30 дней"
+              >
+                <line
+                  v-for="tick in trendChart.yTicks"
+                  :key="'grid-' + tick.value"
+                  class="chart-grid-line"
+                  :x1="trendChart.marginLeft"
+                  :x2="trendChart.width - trendChart.marginRight"
+                  :y1="tick.y"
+                  :y2="tick.y"
+                />
+                <text
+                  v-for="tick in trendChart.yTicks"
+                  :key="'ylabel-' + tick.value"
+                  class="chart-axis-label"
+                  :x="trendChart.marginLeft - 6"
+                  :y="tick.y"
+                  text-anchor="end"
+                  dominant-baseline="middle"
+                >{{ tick.value }}</text>
+                <text
+                  v-for="tick in trendChart.xTicks"
+                  :key="'xlabel-' + tick.key"
+                  class="chart-axis-label"
+                  :x="tick.x"
+                  :y="trendChart.height - 8"
+                  text-anchor="middle"
+                >{{ tick.label }}</text>
+                <rect
+                  v-for="bar in trendChart.bars"
+                  :key="bar.key"
+                  :x="bar.x"
+                  :y="bar.y"
+                  :width="bar.width"
+                  :height="bar.height"
+                  :fill="bar.color"
+                />
+                <rect
+                  v-for="hit in trendChart.hitAreas"
+                  :key="hit.key"
+                  :x="hit.x"
+                  :y="trendChart.marginTop"
+                  :width="hit.width"
+                  :height="trendChart.plotHeight"
+                  fill="transparent"
+                ><title>{{ hit.tooltip }}</title></rect>
+              </svg>
+              <div class="trend__legend">
+                <span class="trend__legend-item trend__legend-item--subscribed">Подписки</span>
+                <span class="trend__legend-item trend__legend-item--sent">Отправки</span>
+              </div>
             </div>
-          </div>
-          <div class="trend__legend">
-            <span class="trend__legend-item trend__legend-item--subscribed">Подписки</span>
-            <span class="trend__legend-item trend__legend-item--sent">Отправки</span>
+
+            <div class="chart-card">
+              <div class="chart-card__head">
+                <h3 class="chart-card__title">Топ товаров по подпискам</h3>
+                <select class="site-select chart-card__select" v-model="topProductsCountry" aria-label="Страна">
+                  <option v-for="code in countryOptions" :key="code" :value="code">{{ countryName(code) }}</option>
+                </select>
+              </div>
+              <div class="product-bars">
+                <div v-for="bar in topProductsBars" :key="bar.sku" class="product-bar">
+                  <div class="product-bar__track">
+                    <div class="product-bar__fill" :style="{ width: bar.widthPct + '%', background: bar.color }"></div>
+                  </div>
+                  <div class="product-bar__label"><span>{{ bar.sku }}</span><strong>{{ bar.count }}</strong></div>
+                </div>
+                <div v-if="!topProductsBars.length" class="table__empty">Нет данных</div>
+              </div>
+            </div>
           </div>
         </section>
 

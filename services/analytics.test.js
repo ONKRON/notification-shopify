@@ -25,6 +25,7 @@ const {
   getTopSkus,
   getActiveSubscriptionsByCountry,
   getTopSkusByCountry,
+  getNewSubscriptionsByCountry,
   getErrorsByCountry,
   getManagerNotificationStats,
   getSubscriptionsNeedingAttention,
@@ -45,15 +46,17 @@ test("getFunnelCounts calls Subscription.count for each window", async () => {
     .mockResolvedValueOnce(5)
     .mockResolvedValueOnce(1)
     .mockResolvedValueOnce(2)
-    .mockResolvedValueOnce(3);
+    .mockResolvedValueOnce(3)
+    .mockResolvedValueOnce(7);
 
   await expect(getFunnelCounts()).resolves.toEqual({
     totalActiveSubscriptions: 5,
     sentLast24h: 1,
     sentLast7d: 2,
     sentLast30d: 3,
+    newSubscriptionsLast7d: 7,
   });
-  expect(mockSubscriptionCount).toHaveBeenCalledTimes(4);
+  expect(mockSubscriptionCount).toHaveBeenCalledTimes(5);
 });
 
 test("getAvgWaitTimeMs returns null when there is no data", async () => {
@@ -117,6 +120,23 @@ test("getTopSkusByCountry groups ranked rows per country", async () => {
     },
     { country: "US", skus: [{ sku: "TS1552-W", totalCount: 16 }] },
   ]);
+});
+
+test("getNewSubscriptionsByCountry groups ranked rows created within the window", async () => {
+  mockSequelizeQuery.mockResolvedValue([
+    [
+      { country: "DE", sku: "TS73", total_count: "3" },
+      { country: "US", sku: "TS1552-W", total_count: "2" },
+    ],
+  ]);
+
+  await expect(getNewSubscriptionsByCountry()).resolves.toEqual([
+    { country: "DE", skus: [{ sku: "TS73", totalCount: 3 }] },
+    { country: "US", skus: [{ sku: "TS1552-W", totalCount: 2 }] },
+  ]);
+  expect(mockSequelizeQuery.mock.calls[0][1]).toEqual({
+    replacements: { days: 7, limitPerCountry: 5 },
+  });
 });
 
 test("getErrorsByCountry groups by country", async () => {
@@ -232,9 +252,11 @@ test("getAnalyticsSummary combines every metric into one object", async () => {
       totalActiveSubscriptions: 0,
       avgWaitTimeMs: null,
       errorRate30d: 0,
+      newSubscriptionsLast7d: 0,
       topSkus: [],
       activeByCountry: [],
       topSkusByCountry: [],
+      newSubscriptionsByCountry: [],
       errorsByCountry: [],
       managerNotificationStats: [],
       subscriptionsNeedingAttention: [],

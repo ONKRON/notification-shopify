@@ -8,21 +8,33 @@ function since(days) {
 }
 
 async function getFunnelCounts() {
-  const [totalActiveSubscriptions, sentLast24h, sentLast7d, sentLast30d] =
-    await Promise.all([
-      Subscription.count({ where: { notification_sent: false } }),
-      Subscription.count({
-        where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(1) } },
-      }),
-      Subscription.count({
-        where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(7) } },
-      }),
-      Subscription.count({
-        where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(30) } },
-      }),
-    ]);
+  const [
+    totalActiveSubscriptions,
+    sentLast24h,
+    sentLast7d,
+    sentLast30d,
+    newSubscriptionsLast7d,
+  ] = await Promise.all([
+    Subscription.count({ where: { notification_sent: false } }),
+    Subscription.count({
+      where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(1) } },
+    }),
+    Subscription.count({
+      where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(7) } },
+    }),
+    Subscription.count({
+      where: { notification_sent: true, notification_sent_at: { [Op.gte]: since(30) } },
+    }),
+    Subscription.count({ where: { createdAt: { [Op.gte]: since(7) } } }),
+  ]);
 
-  return { totalActiveSubscriptions, sentLast24h, sentLast7d, sentLast30d };
+  return {
+    totalActiveSubscriptions,
+    sentLast24h,
+    sentLast7d,
+    sentLast30d,
+    newSubscriptionsLast7d,
+  };
 }
 
 async function getAvgWaitTimeMs() {
@@ -87,6 +99,32 @@ async function getTopSkusByCountry(limitPerCountry = 5) {
      WHERE rank <= :limitPerCountry
      ORDER BY country, total_count DESC`,
     { replacements: { limitPerCountry } },
+  );
+
+  const byCountry = new Map();
+  for (const row of rows) {
+    const country = row.country;
+    if (!byCountry.has(country)) byCountry.set(country, []);
+    byCountry.get(country).push({ sku: row.sku, totalCount: Number(row.total_count) });
+  }
+
+  return [...byCountry.entries()]
+    .map(([country, skus]) => ({ country, skus }))
+    .sort((a, b) => a.country.localeCompare(b.country));
+}
+
+async function getNewSubscriptionsByCountry(days = 7, limitPerCountry = 5) {
+  const [rows] = await sequelize.query(
+    `SELECT country, sku, total_count FROM (
+       SELECT country, sku, COUNT(*) AS total_count,
+              ROW_NUMBER() OVER (PARTITION BY country ORDER BY COUNT(*) DESC) AS rank
+       FROM notifications
+       WHERE "createdAt" >= NOW() - (interval '1 day' * :days)
+       GROUP BY country, sku
+     ) ranked
+     WHERE rank <= :limitPerCountry
+     ORDER BY country, total_count DESC`,
+    { replacements: { days, limitPerCountry } },
   );
 
   const byCountry = new Map();
@@ -269,6 +307,7 @@ async function getAnalyticsSummary() {
     topSkus,
     activeByCountry,
     topSkusByCountry,
+    newSubscriptionsByCountry,
     errorsByCountry,
     managerNotificationStats,
     subscriptionsNeedingAttention,
@@ -283,6 +322,7 @@ async function getAnalyticsSummary() {
     getTopSkus(),
     getActiveSubscriptionsByCountry(),
     getTopSkusByCountry(),
+    getNewSubscriptionsByCountry(),
     getErrorsByCountry(),
     getManagerNotificationStats(),
     getSubscriptionsNeedingAttention(),
@@ -299,6 +339,7 @@ async function getAnalyticsSummary() {
     topSkus,
     activeByCountry,
     topSkusByCountry,
+    newSubscriptionsByCountry,
     errorsByCountry,
     managerNotificationStats,
     subscriptionsNeedingAttention,
@@ -318,6 +359,7 @@ module.exports = {
   getTopSkus,
   getActiveSubscriptionsByCountry,
   getTopSkusByCountry,
+  getNewSubscriptionsByCountry,
   getErrorsByCountry,
   getManagerNotificationStats,
   getSubscriptionsNeedingAttention,

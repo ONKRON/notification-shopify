@@ -63,6 +63,13 @@ function buildBar(percent, size = 10) {
 
 const DIVIDER = "=================================";
 
+const DEFAULT_DASHBOARD_URL = "https://notification-shopify-production.up.railway.app";
+
+function getDashboardUrl() {
+  const base = process.env.MANAGER_DASHBOARD_PUBLIC_URL || DEFAULT_DASHBOARD_URL;
+  return `${base.replace(/\/+$/, "")}/manager/analytics`;
+}
+
 function formatComparisonLine(previousSentAt) {
   if (!previousSentAt) return "Сравнение — нет данных за прошлую неделю";
   const previousDate = new Date(previousSentAt);
@@ -97,6 +104,20 @@ function formatDigestMessage(summary, previousSummary = null, previousSentAt = n
     })
     .join("\n\n");
 
+  const newSubscriptionBlocks = [...summary.newSubscriptionsByCountry]
+    .sort(
+      (a, b) =>
+        b.skus.reduce((sum, sku) => sum + sku.totalCount, 0) -
+        a.skus.reduce((sum, sku) => sum + sku.totalCount, 0),
+    )
+    .map((entry) => {
+      const skuLines = entry.skus
+        .map((sku) => `${sku.sku} - ${sku.totalCount}`)
+        .join("\n");
+      return [`${countryFlag(entry.country)} ${countryName(entry.country)}`, skuLines].join("\n");
+    })
+    .join("\n\n");
+
   return [
     "📊 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ПО ПОДПИСКАМ",
     `Дата отчета — ${formatReportDate()}`,
@@ -106,14 +127,23 @@ function formatDigestMessage(summary, previousSummary = null, previousSentAt = n
     countryBlocks || "Нет данных по странам",
     "",
     DIVIDER,
+    "🆕 НОВЫЕ ПОДПИСКИ ЗА 7 ДНЕЙ",
+    DIVIDER,
+    "",
+    newSubscriptionBlocks || "Новых подписок за 7 дней не было",
+    "",
+    DIVIDER,
     "📈 ИТОГО",
     DIVIDER,
     `Активных подписок: ${summary.totalActiveSubscriptions}${formatTrend(summary.totalActiveSubscriptions, previousSummary?.totalActiveSubscriptions)}`,
+    `Новых подписок за 7 дней: ${summary.newSubscriptionsLast7d}${formatTrend(summary.newSubscriptionsLast7d, previousSummary?.newSubscriptionsLast7d)}`,
     `Отправлено за 7 дней: ${summary.sentLast7d}${formatTrend(summary.sentLast7d, previousSummary?.sentLast7d)}`,
     `Отправлено за 30 дней: ${summary.sentLast30d}`,
     `Среднее время ожидания: ${formatDuration(summary.avgWaitTimeMs)}`,
     `Доля ошибок за 30 дней: ${summary.errorRate30d}% ${buildBar(summary.errorRate30d)}${formatTrend(summary.errorRate30d, previousSummary?.errorRate30d, { unit: "%" })}`,
     `⚠️ Требуют внимания: ${attentionCount}${formatTrend(attentionCount, previousAttentionCount)}`,
+    "",
+    `🔗 Подробнее — ${getDashboardUrl()}`,
   ].join("\n");
 }
 

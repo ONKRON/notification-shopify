@@ -26,6 +26,7 @@ const {
 
 const summary = {
   totalActiveSubscriptions: 351,
+  newSubscriptionsLast7d: 5,
   sentLast7d: 4,
   sentLast30d: 10,
   avgWaitTimeMs: 90000,
@@ -44,6 +45,10 @@ const summary = {
         { sku: "TS3", totalCount: 5 },
       ],
     },
+  ],
+  newSubscriptionsByCountry: [
+    { country: "DE", skus: [{ sku: "TS2", totalCount: 2 }] },
+    { country: "US", skus: [{ sku: "TS1", totalCount: 3 }] },
   ],
   generatedAt: "2026-08-05T00:00:00.000Z",
 };
@@ -67,6 +72,47 @@ test("formatDigestMessage includes a header, flags, per-country blocks, and a fi
   expect(message).toContain("Активных подписок: 351");
   expect(message).toContain("Отправлено за 7 дней: 4");
   expect(message).toContain("⚠️ Требуют внимания: 2");
+});
+
+test("formatDigestMessage includes a new-subscriptions-this-week block", () => {
+  const message = formatDigestMessage(summary);
+  expect(message).toContain("🆕 НОВЫЕ ПОДПИСКИ ЗА 7 ДНЕЙ");
+  expect(message).toContain("Новых подписок за 7 дней: 5");
+  const newSectionIndex = message.indexOf("🆕 НОВЫЕ ПОДПИСКИ ЗА 7 ДНЕЙ");
+  const totalsSectionIndex = message.indexOf("📈 ИТОГО");
+  const newBlock = message.slice(newSectionIndex, totalsSectionIndex);
+  expect(newBlock).toContain("🇩🇪 Германия");
+  expect(newBlock).toContain("TS2 - 2");
+  expect(newBlock).toContain("🇺🇸 США");
+  expect(newBlock).toContain("TS1 - 3");
+});
+
+test("formatDigestMessage flags an empty week when there are no new subscriptions", () => {
+  const message = formatDigestMessage({ ...summary, newSubscriptionsByCountry: [] });
+  expect(message).toContain("Новых подписок за 7 дней не было");
+});
+
+describe("dashboard link", () => {
+  const originalUrl = process.env.MANAGER_DASHBOARD_PUBLIC_URL;
+
+  afterEach(() => {
+    if (originalUrl === undefined) delete process.env.MANAGER_DASHBOARD_PUBLIC_URL;
+    else process.env.MANAGER_DASHBOARD_PUBLIC_URL = originalUrl;
+  });
+
+  test("formatDigestMessage links to the default production dashboard", () => {
+    delete process.env.MANAGER_DASHBOARD_PUBLIC_URL;
+    const message = formatDigestMessage(summary);
+    expect(message).toContain(
+      "🔗 Подробнее — https://notification-shopify-production.up.railway.app/manager/analytics",
+    );
+  });
+
+  test("formatDigestMessage honors a configured dashboard URL", () => {
+    process.env.MANAGER_DASHBOARD_PUBLIC_URL = "https://example.com/";
+    const message = formatDigestMessage(summary);
+    expect(message).toContain("🔗 Подробнее — https://example.com/manager/analytics");
+  });
 });
 
 test("formatDigestMessage orders countries by active subscriptions, busiest first", () => {
