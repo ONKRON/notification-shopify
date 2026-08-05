@@ -5,7 +5,7 @@ const summary = {
   sentLast24h: 0,
   sentLast7d: 4,
   sentLast30d: 10,
-  avgWaitTimeMs: 90000,
+  avgWaitTimeMs: 129600000, // 1.5 дня
   errorRate30d: 12.5,
   subscriptionsNeedingAttention: [{ id: 1 }],
   errorsByCountry: [{ country: "DE", error_count: "2" }],
@@ -23,7 +23,7 @@ const allSkusByCountry = [
 ];
 
 const allWaitTimeBySku = [
-  { sku: "TS1", country: "US", sentCount: 4, avgWaitMs: 1500 },
+  { sku: "TS1", country: "US", sentCount: 4, avgWaitMs: 277200000 }, // 3.2 дня
 ];
 
 test("countryName maps known codes and falls back to the raw code", () => {
@@ -44,22 +44,24 @@ test("builds a summary sheet, one sheet per country, problem emails, and cron ru
   ]);
 });
 
-test("summary sheet lists the key metrics", () => {
+test("summary sheet lists the key metrics with wait time in days, not raw ms", () => {
   const workbook = buildAnalyticsWorkbook(summary, [], []);
   const sheet = workbook.getWorksheet("Сводка");
   const values = sheet.getColumn(1).values.filter(Boolean);
   expect(values).toContain("Активных подписок");
+  expect(values).toContain("Среднее время ожидания (дней)");
   expect(sheet.getCell("B2").value).toBe(351);
+  expect(sheet.getCell("B6").value).toBe(1.5);
 });
 
-test("country sheet lists SKUs sorted from the source data and the country error count", () => {
+test("country sheet lists SKUs sorted from the source data, wait time in days, and the country error count", () => {
   const workbook = buildAnalyticsWorkbook(summary, allSkusByCountry, allWaitTimeBySku);
   const usSheet = workbook.getWorksheet("США");
 
   expect(usSheet.getCell("A2").value).toBe("TS1");
   expect(usSheet.getCell("B2").value).toBe(16);
   expect(usSheet.getCell("C2").value).toBe(4);
-  expect(usSheet.getCell("D2").value).toBe(1500);
+  expect(usSheet.getCell("D2").value).toBe(3.2);
 
   const deSheet = workbook.getWorksheet("Германия");
   const lastRow = deSheet.lastRow;

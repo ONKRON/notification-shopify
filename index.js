@@ -189,6 +189,11 @@ app.get("/api/manager/digest/preview", async (req, res) => {
   }
 });
 
+function msToDays(ms) {
+  if (!Number.isFinite(ms)) return "";
+  return Math.round((ms / (24 * 60 * 60 * 1000)) * 10) / 10;
+}
+
 function buildAnalyticsCsv(summary) {
   const sections = [];
 
@@ -201,9 +206,9 @@ function buildAnalyticsCsv(summary) {
 
   sections.push(
     "Время ожидания по SKU",
-    "SKU;Страна;Отправок;Среднее ожидание (мс)",
+    "SKU;Страна;Отправок;Среднее ожидание (дней)",
     ...summary.waitTimeBySku.map(
-      (row) => `${row.sku};${row.country};${row.sentCount};${row.avgWaitMs}`,
+      (row) => `${row.sku};${row.country};${row.sentCount};${msToDays(row.avgWaitMs)}`,
     ),
     "",
   );

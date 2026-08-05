@@ -14,6 +14,11 @@ function countryName(code) {
   return COUNTRY_NAMES[code] || code;
 }
 
+function msToDays(ms) {
+  if (!Number.isFinite(ms)) return "";
+  return Math.round((ms / (24 * 60 * 60 * 1000)) * 10) / 10;
+}
+
 function addHeaderStyle(sheet) {
   sheet.getRow(1).font = { bold: true };
 }
@@ -30,8 +35,10 @@ function buildSummarySheet(workbook, summary) {
     { metric: "Отправлено за 7 дней", value: summary.sentLast7d },
     { metric: "Отправлено за 30 дней", value: summary.sentLast30d },
     {
-      metric: "Среднее время ожидания (мс)",
-      value: summary.avgWaitTimeMs ?? "нет данных",
+      metric: "Среднее время ожидания (дней)",
+      value: Number.isFinite(summary.avgWaitTimeMs)
+        ? msToDays(summary.avgWaitTimeMs)
+        : "нет данных",
     },
     { metric: "Доля ошибок за 30 дней (%)", value: summary.errorRate30d },
     {
@@ -103,7 +110,7 @@ function buildCountrySheets(workbook, summary, allSkusByCountry, allWaitTimeBySk
       { header: "SKU", key: "sku", width: 22 },
       { header: "Активных подписок", key: "active", width: 18 },
       { header: "Отправлено", key: "sent", width: 14 },
-      { header: "Среднее ожидание (мс)", key: "wait", width: 20 },
+      { header: "Среднее ожидание (дней)", key: "wait", width: 20 },
     ];
     sheet.addRows(
       skusByCountry.get(country).map((row) => {
@@ -112,7 +119,7 @@ function buildCountrySheets(workbook, summary, allSkusByCountry, allWaitTimeBySk
           sku: row.sku,
           active: Number(row.total_count),
           sent: waitRow ? waitRow.sentCount : 0,
-          wait: waitRow ? waitRow.avgWaitMs : "",
+          wait: waitRow ? msToDays(waitRow.avgWaitMs) : "",
         };
       }),
     );
