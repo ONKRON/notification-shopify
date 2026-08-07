@@ -14,6 +14,7 @@ const {
 } = require("./services/bitrix");
 const { createHealthReport } = require("./services/health");
 const { maskEmail } = require("./utils/privacy");
+const { managerAuth } = require("./middleware/managerAuth");
 const {
   clearProductCatalogCache,
   getManagerDashboardData,
@@ -146,6 +147,10 @@ app.get("/health", async (req, res) => {
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
+// Один общий аккаунт на всех менеджеров — данные подписчиков чувствительные.
+app.use("/manager", managerAuth);
+app.use("/api/manager", managerAuth);
+
 app.get("/manager/vue.js", (req, res) => {
   res.sendFile(require.resolve("vue/dist/vue.global.prod.js"));
 });
@@ -202,7 +207,7 @@ app.get("/api/manager/history", async (req, res) => {
   }
 });
 
-app.get("/download-history-csv", async (req, res) => {
+app.get("/download-history-csv", managerAuth, async (req, res) => {
   const filePath = path.join(__dirname, "subscription_history.csv");
   try {
     const csv = await buildHistoryCsv(req.query);
@@ -284,7 +289,7 @@ function buildAnalyticsCsv(summary) {
   return sections.join("\n");
 }
 
-app.get("/download-analytics-csv", async (req, res) => {
+app.get("/download-analytics-csv", managerAuth, async (req, res) => {
   const filePath = path.join(__dirname, "analytics_stats.csv");
   try {
     const summary = await getAnalyticsSummary();
@@ -306,7 +311,7 @@ app.get("/download-analytics-csv", async (req, res) => {
   }
 });
 
-app.get("/download-analytics-excel", async (req, res) => {
+app.get("/download-analytics-excel", managerAuth, async (req, res) => {
   const filePath = path.join(__dirname, "analytics_stats.xlsx");
   try {
     const [summary, allSkusByCountry, allWaitTimeBySku] = await Promise.all([
@@ -437,7 +442,7 @@ app.post("/send-notification", async (req, res) => {
     res.status(500).json({ message: "Error saving subscription" });
   }
 });
-app.get("/check-subscription", async (req, res) => {
+app.get("/check-subscription", managerAuth, async (req, res) => {
   try {
     const [results] = await sequelize.query("SELECT * FROM notifications");
     res.status(200).json(results);
@@ -447,7 +452,7 @@ app.get("/check-subscription", async (req, res) => {
   }
 });
 
-app.get("/subscription-stats", async (req, res) => {
+app.get("/subscription-stats", managerAuth, async (req, res) => {
   try {
     const subscriptions = await Subscription.findAll({
       attributes: ["country", "sku", [fn("COUNT", col("sku")), "total_count"]],
@@ -501,7 +506,7 @@ app.get("/subscription-stats", async (req, res) => {
   }
 });
 
-app.get("/all-subs", async (req, res) => {
+app.get("/all-subs", managerAuth, async (req, res) => {
   try {
     const [results] = await sequelize.query(
       "SELECT sku, country FROM notifications WHERE notification_sent = false",
@@ -605,7 +610,7 @@ app.get("/all-subs", async (req, res) => {
 });
 
 // Отдельный эндпоинт для скачивания CSV
-app.get("/download-subscription-csv", (req, res) => {
+app.get("/download-subscription-csv", managerAuth, (req, res) => {
   const filePath = path.join(__dirname, "subscription_stats.csv");
   res.download(filePath, "subscription_stats.csv", (err) => {
     if (err) {

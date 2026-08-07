@@ -79,6 +79,8 @@ jest.mock("./services/bitrix", () => ({
 
 const { app } = require("./index");
 
+const MANAGER_AUTH_HEADER = `Basic ${Buffer.from("manager:hunter2").toString("base64")}`;
+
 beforeEach(() => {
   mockFindOne.mockReset().mockResolvedValue(null);
   mockFindAll.mockReset().mockResolvedValue([]);
@@ -86,6 +88,8 @@ beforeEach(() => {
   mockDeliverManagerNotification.mockReset().mockResolvedValue(456);
   mockSubscriptionInstances.length = 0;
   process.env.SHOPIFY_DE_STORE = "de-store.myshopify.com";
+  process.env.MANAGER_AUTH_USER = "manager";
+  process.env.MANAGER_AUTH_PASSWORD = "hunter2";
 });
 
 test("creates a DE subscription without a nickname and sends both notifications", async () => {
@@ -131,8 +135,28 @@ test("rejects an unsupported country before writing to the database", async () =
   expect(mockFindOne).not.toHaveBeenCalled();
 });
 
-test("serves the manager dashboard without authentication", async () => {
-  const response = await request(app).get("/manager/subscriptions");
+test("rejects manager routes without credentials", async () => {
+  const page = await request(app).get("/manager/subscriptions");
+  const api = await request(app).get("/api/manager/subscriptions");
+
+  expect(page.status).toBe(401);
+  expect(page.headers["www-authenticate"]).toContain("Basic");
+  expect(api.status).toBe(401);
+});
+
+test("rejects manager routes with the wrong password", async () => {
+  const wrongHeader = `Basic ${Buffer.from("manager:wrong").toString("base64")}`;
+  const response = await request(app)
+    .get("/manager/subscriptions")
+    .set("Authorization", wrongHeader);
+
+  expect(response.status).toBe(401);
+});
+
+test("serves the manager dashboard with valid credentials", async () => {
+  const response = await request(app)
+    .get("/manager/subscriptions")
+    .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(response.status).toBe(200);
   expect(response.text).toContain("Подписки на товары");
@@ -141,10 +165,16 @@ test("serves the manager dashboard without authentication", async () => {
   );
 });
 
-test("serves the Vue manager assets without authentication", async () => {
-  const appAsset = await request(app).get("/manager/assets/app.js");
-  const vueAsset = await request(app).get("/manager/vue.js");
-  const logoAsset = await request(app).get("/manager/assets/onkron-logo.svg");
+test("serves the Vue manager assets with valid credentials", async () => {
+  const appAsset = await request(app)
+    .get("/manager/assets/app.js")
+    .set("Authorization", MANAGER_AUTH_HEADER);
+  const vueAsset = await request(app)
+    .get("/manager/vue.js")
+    .set("Authorization", MANAGER_AUTH_HEADER);
+  const logoAsset = await request(app)
+    .get("/manager/assets/onkron-logo.svg")
+    .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(appAsset.status).toBe(200);
   expect(appAsset.text).toContain("createApp");
@@ -154,8 +184,10 @@ test("serves the Vue manager assets without authentication", async () => {
   expect(logoAsset.headers["content-type"]).toContain("image/svg+xml");
 });
 
-test("returns aggregated manager dashboard data", async () => {
-  const response = await request(app).get("/api/manager/subscriptions");
+test("returns aggregated manager dashboard data with valid credentials", async () => {
+  const response = await request(app)
+    .get("/api/manager/subscriptions")
+    .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual(
@@ -163,10 +195,10 @@ test("returns aggregated manager dashboard data", async () => {
   );
 });
 
-test("returns subscriber details for a SKU without authentication", async () => {
-  const response = await request(app).get(
-    "/api/manager/subscription-details?sku=TS2811-B&country=DE",
-  );
+test("returns subscriber details for a SKU with valid credentials", async () => {
+  const response = await request(app)
+    .get("/api/manager/subscription-details?sku=TS2811-B&country=DE")
+    .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual({
@@ -177,9 +209,9 @@ test("returns subscriber details for a SKU without authentication", async () => 
 });
 
 test("accepts several countries for subscriber details", async () => {
-  const response = await request(app).get(
-    "/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT",
-  );
+  const response = await request(app)
+    .get("/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT")
+    .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(response.status).toBe(200);
   const where = mockFindAll.mock.calls[0][0].where;
