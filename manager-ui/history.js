@@ -211,16 +211,28 @@ createApp({
         </div>
         <div class="actions">
           <input v-model="searchTerm" class="search" type="search" placeholder="SKU, ник или email" aria-label="Поиск по SKU, нику или email">
+        </div>
+      </div>
+
+      <div class="toolbar-secondary" v-if="result">
+        <label class="field">
+          <span class="field__label">Статус</span>
           <select v-model="statusFilter" class="site-select" aria-label="Статус">
-            <option value="">Любой статус</option>
+            <option value="">Любой</option>
             <option value="sent">Отправлено</option>
             <option value="pending">Ожидает</option>
             <option value="error">Ошибка</option>
           </select>
-          <input v-model="dateFrom" class="search" type="date" aria-label="Дата от">
-          <input v-model="dateTo" class="search" type="date" aria-label="Дата до">
-          <a class="button" :href="csvExportUrl">Экспорт CSV</a>
-        </div>
+        </label>
+        <label class="field">
+          <span class="field__label">Дата с</span>
+          <input v-model="dateFrom" class="date-input" type="date" aria-label="Дата от">
+        </label>
+        <label class="field">
+          <span class="field__label">Дата по</span>
+          <input v-model="dateTo" class="date-input" type="date" aria-label="Дата до">
+        </label>
+        <a class="button field__export" :href="csvExportUrl">Экспорт CSV</a>
       </div>
 
       <div v-if="loading" class="app-loading">Загружаем историю подписок…</div>
@@ -229,7 +241,7 @@ createApp({
         <div class="summary">
           <div class="metric"><strong>{{ result.total }}</strong><span>Найдено подписок</span></div>
           <div class="metric"><strong>{{ result.page }}</strong><span>Страница из {{ result.totalPages }}</span></div>
-          <div class="metric"><strong>{{ result.countries.length }}</strong><span>Стран в выборке</span></div>
+          <div class="metric"><strong>{{ result.countries.length }}</strong><span>Стран доступно для фильтра</span></div>
         </div>
 
         <section class="section">
