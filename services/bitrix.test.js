@@ -2,10 +2,13 @@ jest.mock("axios");
 
 const axios = require("axios");
 const {
+  buildAvailabilityConfirmationMessage,
   buildProductSubscriptionMessage,
   deliverProductSubscriptionNotification,
+  getAvailabilityConfirmationDialogId,
   getDigestDialogId,
   getManagerDialogId,
+  notifyAvailabilityConfirmed,
   sendBitrixMessage,
   sendProductSubscriptionNotification,
 } = require("./bitrix");
@@ -187,6 +190,62 @@ describe("getDigestDialogId", () => {
     process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER = "1377";
     expect(getDigestDialogId()).toBe("1377");
   });
+});
+
+describe("getAvailabilityConfirmationDialogId", () => {
+  const AVAILABILITY_ENV = "BITRIX_AVAILABILITY_CONFIRMATION_DIALOG_ID";
+  const originalAvailabilityEnv = process.env[AVAILABILITY_ENV];
+
+  afterEach(() => {
+    if (originalAvailabilityEnv === undefined) delete process.env[AVAILABILITY_ENV];
+    else process.env[AVAILABILITY_ENV] = originalAvailabilityEnv;
+  });
+
+  test("prefers the dedicated availability confirmation dialog id", () => {
+    process.env[AVAILABILITY_ENV] = "555";
+    expect(getAvailabilityConfirmationDialogId()).toBe("555");
+  });
+
+  test("falls back to the manager fallback, then to 17171", () => {
+    delete process.env[AVAILABILITY_ENV];
+    delete process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER;
+    expect(getAvailabilityConfirmationDialogId()).toBe("17171");
+
+    process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER = "1377";
+    expect(getAvailabilityConfirmationDialogId()).toBe("1377");
+  });
+});
+
+test("builds the availability confirmation message", () => {
+  expect(buildAvailabilityConfirmationMessage(subscription, "de-store.myshopify.com"))
+    .toBe(`Товар снова в наличии — письмо подписчику отправлено
+Страна: DE
+Магазин: de-store.myshopify.com
+SKU: TS2811-B
+Email: customer@example.com
+Имя: Kunde`);
+});
+
+test("notifyAvailabilityConfirmed sends the confirmation to dialog 17171 by default", async () => {
+  process.env.BITRIX24_BOT_MESSAGE_WEBHOOK =
+    "https://example.bitrix24.com/rest/1/webhook-token";
+  process.env.BITRIX24_BOT_ID = "26984";
+  process.env.BITRIX24_BOT_CLIENT_ID = "onkron_notify_bot";
+  delete process.env.BITRIX_AVAILABILITY_CONFIRMATION_DIALOG_ID;
+  delete process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER;
+  axios.post.mockResolvedValue({ data: { result: 321 } });
+
+  await expect(
+    notifyAvailabilityConfirmed(subscription, "de-store.myshopify.com"),
+  ).resolves.toBe(321);
+  expect(axios.post).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      DIALOG_ID: "17171",
+      MESSAGE: expect.stringContaining("Товар снова в наличии"),
+    }),
+    expect.any(Object),
+  );
 });
 
 test("tracks a failed Bitrix delivery for a later retry", async () => {

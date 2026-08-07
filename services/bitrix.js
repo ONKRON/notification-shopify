@@ -107,6 +107,32 @@ function getDigestDialogId() {
   );
 }
 
+function getAvailabilityConfirmationDialogId() {
+  return (
+    process.env.BITRIX_AVAILABILITY_CONFIRMATION_DIALOG_ID ||
+    process.env.BITRIX_PRODUCT_NOTIFICATION_FALLBACK_MANAGER ||
+    DEFAULT_FALLBACK_MANAGER_DIALOG_ID
+  );
+}
+
+function buildAvailabilityConfirmationMessage(subscription, shopifyStore) {
+  return [
+    "Товар снова в наличии — письмо подписчику отправлено",
+    `Страна: ${subscription.country}`,
+    `Магазин: ${shopifyStore}`,
+    `SKU: ${subscription.sku}`,
+    `Email: ${subscription.email}`,
+    `Имя: ${subscription.nickname}`,
+  ].join("\n");
+}
+
+async function notifyAvailabilityConfirmed(subscription, shopifyStore) {
+  return sendBitrixMessage(
+    getAvailabilityConfirmationDialogId(),
+    buildAvailabilityConfirmationMessage(subscription, shopifyStore),
+  );
+}
+
 async function sendProductSubscriptionNotification(subscription, shopifyStore) {
   const managerDialogId = getManagerDialogId(subscription.country);
   return sendBitrixMessage(
@@ -155,11 +181,14 @@ async function deliverProductSubscriptionNotification(subscription, shopifyStore
 }
 
 module.exports = {
+  buildAvailabilityConfirmationMessage,
   buildProductSubscriptionMessage,
   deliverProductSubscriptionNotification,
+  getAvailabilityConfirmationDialogId,
   getDigestDialogId,
   getManagerDialogId,
   getMaxNotificationAttempts,
+  notifyAvailabilityConfirmed,
   sendBitrixMessage,
   sendProductSubscriptionNotification,
 };

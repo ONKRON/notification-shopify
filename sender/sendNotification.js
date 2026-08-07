@@ -14,6 +14,7 @@ const {
 const {
   deliverProductSubscriptionNotification,
   getMaxNotificationAttempts,
+  notifyAvailabilityConfirmed,
 } = require("../services/bitrix");
 const {
   isSubscribedVariantAvailable,
@@ -275,6 +276,15 @@ async function checkProductAvailability() {
                 sendNotification,
               );
               stats.sent += 1;
+
+              try {
+                await notifyAvailabilityConfirmed(subscription, shopifyStore);
+              } catch (bitrixError) {
+                console.error(
+                  `Failed to send Bitrix availability confirmation for subscription ${subscription.id}:`,
+                  bitrixError.message,
+                );
+              }
             } catch (error) {
               stats.errors += 1;
               console.error(
