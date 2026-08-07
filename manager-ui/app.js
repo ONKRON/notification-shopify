@@ -257,6 +257,7 @@ createApp({
         <nav class="header__nav" aria-label="Навигация панели">
           <a class="header__nav-link header__nav-link--active" href="/manager/subscriptions">Подписка на товары</a>
           <a class="header__nav-link" href="/manager/analytics">Аналитика</a>
+          <a class="header__nav-link" href="/manager/history">История</a>
           <span class="header__scope">{{ selectedCountries.length ? selectedCountries.join(', ') : 'Все страны' }}</span>
         </nav>
       </div>

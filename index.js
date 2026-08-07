@@ -21,11 +21,17 @@ const {
 } = require("./services/managerDashboard");
 const { renderManagerDashboard } = require("./views/managerDashboard");
 const { renderManagerAnalytics } = require("./views/managerAnalytics");
+const { renderManagerHistory } = require("./views/managerHistory");
 const {
   getAnalyticsSummary,
   getAllActiveSkusByCountry,
   getWaitTimeBySku,
 } = require("./services/analytics");
+const {
+  buildHistoryCsv,
+  getHistoryFilterOptions,
+  getSubscriptionHistory,
+} = require("./services/subscriptionHistory");
 const { buildDigestPreview } = require("./services/digest");
 const { buildAnalyticsWorkbook } = require("./services/analyticsExcel");
 const app = express();
@@ -176,6 +182,45 @@ app.get("/api/manager/analytics", async (req, res) => {
   } catch (error) {
     console.error("Failed to build analytics summary:", error.message);
     res.status(500).json({ message: "Failed to load analytics" });
+  }
+});
+
+app.get("/manager/history", (req, res) => {
+  res.type("html").send(renderManagerHistory());
+});
+
+app.get("/api/manager/history", async (req, res) => {
+  try {
+    const [history, countries] = await Promise.all([
+      getSubscriptionHistory(req.query),
+      getHistoryFilterOptions(),
+    ]);
+    res.json({ ...history, countries });
+  } catch (error) {
+    console.error("Failed to build subscription history:", error.message);
+    res.status(500).json({ message: "Failed to load subscription history" });
+  }
+});
+
+app.get("/download-history-csv", async (req, res) => {
+  const filePath = path.join(__dirname, "subscription_history.csv");
+  try {
+    const csv = await buildHistoryCsv(req.query);
+    fs.writeFileSync(filePath, csv, "utf-8");
+    res.download(filePath, "subscription_history.csv", (err) => {
+      if (err) {
+        console.error("Ошибка при скачивании CSV истории:", err);
+        if (!res.headersSent) {
+          res.status(500).send("Ошибка при скачивании файла.");
+        }
+      }
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr) console.error("Ошибка удаления временного файла:", unlinkErr);
+      });
+    });
+  } catch (error) {
+    console.error("Ошибка при формировании CSV истории:", error.message);
+    res.status(500).send("Ошибка при формировании CSV истории.");
   }
 });
 

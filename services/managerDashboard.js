@@ -318,4 +318,5 @@ module.exports = {
   getManagerDashboardData,
   getProductSubscriptionDetails,
   groupSubscriptionRows,
+  mapWithConcurrency,
 };

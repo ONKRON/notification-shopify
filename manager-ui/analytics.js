@@ -272,6 +272,7 @@ createApp({
         <nav class="header__nav" aria-label="Навигация панели">
           <a class="header__nav-link" href="/manager/subscriptions">Подписка на товары</a>
           <a class="header__nav-link header__nav-link--active" href="/manager/analytics">Аналитика</a>
+          <a class="header__nav-link" href="/manager/history">История</a>
         </nav>
       </div>
     </header>
