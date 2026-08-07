@@ -1,4 +1,4 @@
-const { createApp, ref, computed, onMounted, watch } = Vue;
+const { createApp, ref, computed, onMounted, onBeforeUnmount, watch } = Vue;
 
 const COUNTRY_NAMES = {
   US: "США",
@@ -19,9 +19,8 @@ const STATUS_LABELS = {
 
 const SORT_COLUMNS = [
   { key: "createdAt", label: "Дата" },
-  { key: "nickname", label: "Никнейм" },
-  { key: "email", label: "Email" },
-  { key: "sku", label: "SKU" },
+  { key: "nickname", label: "Подписчик" },
+  { key: "sku", label: "Товар" },
   { key: "country", label: "Страна" },
 ];
 
@@ -42,6 +41,9 @@ createApp({
     const sortBy = ref("createdAt");
     const sortDir = ref("desc");
     const page = ref(1);
+    const copiedEmail = ref("");
+    const toast = ref("");
+    let toastTimer = null;
 
     let searchDebounce = null;
 
@@ -109,6 +111,57 @@ createApp({
       loadHistory();
     }
 
+    const hasActiveFilters = computed(() =>
+      Boolean(
+        searchTerm.value.trim() ||
+          selectedCountries.value.length ||
+          statusFilter.value ||
+          dateFrom.value ||
+          dateTo.value,
+      ),
+    );
+
+    function resetFilters() {
+      searchTerm.value = "";
+      selectedCountries.value = [];
+      statusFilter.value = "";
+      dateFrom.value = "";
+      dateTo.value = "";
+      resetPageAndLoad();
+    }
+
+    async function writeClipboard(value) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      if (!copied) throw new Error("Copy failed");
+    }
+
+    async function copyEmail(email) {
+      try {
+        await writeClipboard(email);
+        copiedEmail.value = email;
+        toast.value = `Email ${email} скопирован`;
+      } catch {
+        toast.value = "Не удалось скопировать email";
+      }
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => {
+        toast.value = "";
+        copiedEmail.value = "";
+      }, 2200);
+    }
+
     watch(searchTerm, () => {
       window.clearTimeout(searchDebounce);
       searchDebounce = window.setTimeout(resetPageAndLoad, 350);
@@ -136,6 +189,9 @@ createApp({
     onMounted(() => {
       loadHistory();
     });
+    onBeforeUnmount(() => {
+      window.clearTimeout(toastTimer);
+    });
 
     return {
       result,
@@ -150,6 +206,11 @@ createApp({
       sortBy,
       sortDir,
       page,
+      copiedEmail,
+      copyEmail,
+      toast,
+      hasActiveFilters,
+      resetFilters,
       chooseCountry,
       resetPageAndLoad,
       toggleSort,
@@ -211,6 +272,7 @@ createApp({
         </div>
         <div class="actions">
           <input v-model="searchTerm" class="search" type="search" placeholder="SKU, ник или email" aria-label="Поиск по SKU, нику или email">
+          <button v-if="hasActiveFilters" class="pager__button" type="button" @click="resetFilters">Сбросить фильтры</button>
         </div>
       </div>
 
@@ -256,7 +318,6 @@ createApp({
                   <th v-for="column in SORT_COLUMNS" :key="column.key" class="is-sortable" @click="toggleSort(column.key)">
                     {{ column.label }} {{ sortIndicator(column.key) }}
                   </th>
-                  <th>Товар</th>
                   <th>Статус</th>
                   <th>Попыток</th>
                   <th>Ошибка</th>
@@ -264,17 +325,37 @@ createApp({
               </thead>
               <tbody>
                 <tr v-for="row in result.items" :key="row.id">
-                  <td>{{ formatDate(row.createdAt) }}</td>
-                  <td>{{ row.nickname || 'Без имени' }}</td>
-                  <td>{{ row.email }}</td>
-                  <td>{{ row.sku || 'Без SKU' }}</td>
-                  <td>{{ row.country }}</td>
-                  <td>{{ row.productTitle }}</td>
-                  <td><span class="status-pill" :class="'status-pill--' + row.status">{{ STATUS_LABELS[row.status] || row.status }}</span></td>
-                  <td>{{ row.notificationAttempts }}</td>
-                  <td :title="row.notificationLastError || ''">{{ row.notificationLastError ? (row.notificationLastError.length > 40 ? row.notificationLastError.slice(0, 40) + '…' : row.notificationLastError) : '—' }}</td>
+                  <td class="cell-nowrap">{{ formatDate(row.createdAt) }}</td>
+                  <td class="cell-wrap">
+                    <div class="subscriber-cell">
+                      <span class="subscriber-cell__name">{{ row.nickname || 'Без имени' }}</span>
+                      <button
+                        class="subscriber-cell__email"
+                        :class="{ 'subscriber-cell__email--copied': copiedEmail === row.email }"
+                        type="button"
+                        :title="'Скопировать ' + row.email"
+                        @click="copyEmail(row.email)"
+                      >{{ copiedEmail === row.email ? 'Скопировано ✓' : row.email }}</button>
+                    </div>
+                  </td>
+                  <td class="cell-wrap">
+                    <div class="product-cell">
+                      <div class="product-cell__image">
+                        <img v-if="row.productImageUrl" :src="row.productImageUrl" :alt="row.productTitle" loading="lazy">
+                        <span v-else class="product-cell__placeholder">{{ row.country }}</span>
+                      </div>
+                      <div class="product-cell__text">
+                        <span class="product-cell__title">{{ row.productTitle }}</span>
+                        <span class="product-cell__sku">{{ row.sku || 'Без SKU' }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="cell-nowrap">{{ row.country }}</td>
+                  <td class="cell-nowrap"><span class="status-pill" :class="'status-pill--' + row.status">{{ STATUS_LABELS[row.status] || row.status }}</span></td>
+                  <td class="cell-nowrap">{{ row.notificationAttempts }}</td>
+                  <td class="cell-wrap cell-error" :title="row.notificationLastError || ''">{{ row.notificationLastError || '—' }}</td>
                 </tr>
-                <tr v-if="!result.items.length"><td colspan="9" class="table__empty">По выбранным фильтрам подписок нет.</td></tr>
+                <tr v-if="!result.items.length"><td colspan="7" class="table__empty">По выбранным фильтрам подписок нет.</td></tr>
               </tbody>
             </table>
           </div>
@@ -286,5 +367,9 @@ createApp({
         </section>
       </template>
     </main>
+
+    <transition name="toast">
+      <div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div>
+    </transition>
   `,
 }).mount("#app");
