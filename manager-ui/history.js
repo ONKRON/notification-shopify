@@ -67,7 +67,7 @@ createApp({
       loading.value = !result.value;
       error.value = "";
       try {
-        const response = await fetch(`/api/manager/history?${buildQuery()}`, {
+        const response = await fetch(`/manager/history/data?${buildQuery()}`, {
           cache: "no-store",
         });
         if (!response.ok)
@@ -169,7 +169,7 @@ createApp({
     watch(statusFilter, resetPageAndLoad);
     watch([dateFrom, dateTo], resetPageAndLoad);
 
-    const csvExportUrl = computed(() => `/download-history-csv?${buildQuery()}`);
+    const csvExportUrl = computed(() => `/manager/history/export.csv?${buildQuery()}`);
 
     const rangeLabel = computed(() => {
       if (!result.value || !result.value.total) return "";

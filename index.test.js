@@ -135,46 +135,52 @@ test("rejects an unsupported country before writing to the database", async () =
   expect(mockFindOne).not.toHaveBeenCalled();
 });
 
-test("rejects manager routes without credentials", async () => {
+test("serves the subscriptions dashboard without credentials", async () => {
   const page = await request(app).get("/manager/subscriptions");
   const api = await request(app).get("/api/manager/subscriptions");
+  const analytics = await request(app).get("/manager/analytics");
 
-  expect(page.status).toBe(401);
-  expect(page.headers["www-authenticate"]).toContain("Basic");
-  expect(api.status).toBe(401);
+  expect(page.status).toBe(200);
+  expect(api.status).toBe(200);
+  expect(analytics.status).toBe(200);
 });
 
-test("rejects manager routes with the wrong password", async () => {
+test("protects only the subscription history module", async () => {
+  const historyPage = await request(app).get("/manager/history");
+  const historyApi = await request(app).get("/manager/history/data");
+  const historyCsv = await request(app).get("/manager/history/export.csv");
+
+  expect(historyPage.status).toBe(401);
+  expect(historyPage.headers["www-authenticate"]).toContain("Basic");
+  expect(historyApi.status).toBe(401);
+  expect(historyCsv.status).toBe(401);
+});
+
+test("rejects a wrong password for the subscription history", async () => {
   const wrongHeader = `Basic ${Buffer.from("manager:wrong").toString("base64")}`;
   const response = await request(app)
-    .get("/manager/subscriptions")
+    .get("/manager/history")
     .set("Authorization", wrongHeader);
 
   expect(response.status).toBe(401);
 });
 
-test("serves the manager dashboard with valid credentials", async () => {
+test("serves the subscription history with valid credentials", async () => {
   const response = await request(app)
-    .get("/manager/subscriptions")
+    .get("/manager/history")
     .set("Authorization", MANAGER_AUTH_HEADER);
 
   expect(response.status).toBe(200);
-  expect(response.text).toContain("Подписки на товары");
+  expect(response.text).toContain("История подписок");
   expect(response.text).toContain(
     "https://cdn.shopify.com/s/files/1/2223/8189/files/favicon_landing.png",
   );
 });
 
-test("serves the Vue manager assets with valid credentials", async () => {
-  const appAsset = await request(app)
-    .get("/manager/assets/app.js")
-    .set("Authorization", MANAGER_AUTH_HEADER);
-  const vueAsset = await request(app)
-    .get("/manager/vue.js")
-    .set("Authorization", MANAGER_AUTH_HEADER);
-  const logoAsset = await request(app)
-    .get("/manager/assets/onkron-logo.svg")
-    .set("Authorization", MANAGER_AUTH_HEADER);
+test("serves the Vue manager assets without credentials", async () => {
+  const appAsset = await request(app).get("/manager/assets/app.js");
+  const vueAsset = await request(app).get("/manager/vue.js");
+  const logoAsset = await request(app).get("/manager/assets/onkron-logo.svg");
 
   expect(appAsset.status).toBe(200);
   expect(appAsset.text).toContain("createApp");
@@ -184,10 +190,8 @@ test("serves the Vue manager assets with valid credentials", async () => {
   expect(logoAsset.headers["content-type"]).toContain("image/svg+xml");
 });
 
-test("returns aggregated manager dashboard data with valid credentials", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscriptions")
-    .set("Authorization", MANAGER_AUTH_HEADER);
+test("returns aggregated manager dashboard data without credentials", async () => {
+  const response = await request(app).get("/api/manager/subscriptions");
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual(
@@ -195,10 +199,10 @@ test("returns aggregated manager dashboard data with valid credentials", async (
   );
 });
 
-test("returns subscriber details for a SKU with valid credentials", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscription-details?sku=TS2811-B&country=DE")
-    .set("Authorization", MANAGER_AUTH_HEADER);
+test("returns subscriber details for a SKU without credentials", async () => {
+  const response = await request(app).get(
+    "/api/manager/subscription-details?sku=TS2811-B&country=DE",
+  );
 
   expect(response.status).toBe(200);
   expect(response.body).toEqual({
@@ -209,9 +213,9 @@ test("returns subscriber details for a SKU with valid credentials", async () => 
 });
 
 test("accepts several countries for subscriber details", async () => {
-  const response = await request(app)
-    .get("/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT")
-    .set("Authorization", MANAGER_AUTH_HEADER);
+  const response = await request(app).get(
+    "/api/manager/subscription-details?sku=TS2811-B&countries=ES,IT",
+  );
 
   expect(response.status).toBe(200);
   const where = mockFindAll.mock.calls[0][0].where;

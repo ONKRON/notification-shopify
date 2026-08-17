@@ -147,10 +147,6 @@ app.get("/health", async (req, res) => {
   res.status(report.status === "healthy" ? 200 : 503).json(report);
 });
 
-// Один общий аккаунт на всех менеджеров — данные подписчиков чувствительные.
-app.use("/manager", managerAuth);
-app.use("/api/manager", managerAuth);
-
 app.get("/manager/vue.js", (req, res) => {
   res.sendFile(require.resolve("vue/dist/vue.global.prod.js"));
 });
@@ -190,11 +186,11 @@ app.get("/api/manager/analytics", async (req, res) => {
   }
 });
 
-app.get("/manager/history", (req, res) => {
+app.get("/manager/history", managerAuth, (req, res) => {
   res.type("html").send(renderManagerHistory());
 });
 
-app.get("/api/manager/history", async (req, res) => {
+app.get("/manager/history/data", managerAuth, async (req, res) => {
   try {
     const [history, countries] = await Promise.all([
       getSubscriptionHistory(req.query),
@@ -207,7 +203,7 @@ app.get("/api/manager/history", async (req, res) => {
   }
 });
 
-app.get("/download-history-csv", managerAuth, async (req, res) => {
+app.get("/manager/history/export.csv", managerAuth, async (req, res) => {
   const filePath = path.join(__dirname, "subscription_history.csv");
   try {
     const csv = await buildHistoryCsv(req.query);
@@ -289,7 +285,7 @@ function buildAnalyticsCsv(summary) {
   return sections.join("\n");
 }
 
-app.get("/download-analytics-csv", managerAuth, async (req, res) => {
+app.get("/download-analytics-csv", async (req, res) => {
   const filePath = path.join(__dirname, "analytics_stats.csv");
   try {
     const summary = await getAnalyticsSummary();
@@ -311,7 +307,7 @@ app.get("/download-analytics-csv", managerAuth, async (req, res) => {
   }
 });
 
-app.get("/download-analytics-excel", managerAuth, async (req, res) => {
+app.get("/download-analytics-excel", async (req, res) => {
   const filePath = path.join(__dirname, "analytics_stats.xlsx");
   try {
     const [summary, allSkusByCountry, allWaitTimeBySku] = await Promise.all([
