@@ -14,6 +14,7 @@ const {
 } = require("./services/bitrix");
 const { createHealthReport } = require("./services/health");
 const { maskEmail } = require("./utils/privacy");
+const { encodeSubject } = require("./utils/emailHeaders");
 const { managerAuth } = require("./middleware/managerAuth");
 const {
   clearProductCatalogCache,
@@ -73,7 +74,7 @@ async function sendEmailDirect(email, { subject, text, html }) {
       "MIME-Version: 1.0\r\n",
       "Content-Transfer-Encoding: 7bit\r\n",
       `to: ${email}\r\n`,
-      `subject: ${subject}\r\n`,
+      `Subject: ${encodeSubject(subject)}\r\n`,
       `from: Onkron Notifications <${process.env.GMAIL_EMAIL}>\r\n`,
       "\r\n",
       html,

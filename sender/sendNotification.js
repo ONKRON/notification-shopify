@@ -26,6 +26,7 @@ const {
 const { createHealthReport } = require("../services/health");
 const { getCronConfig } = require("../config/runtime");
 const { maskEmail } = require("../utils/privacy");
+const { encodeSubject } = require("../utils/emailHeaders");
 const { sendWeeklyAnalyticsDigest } = require("../services/digest");
 
 const app = express();
@@ -65,7 +66,7 @@ async function sendEmailDirect(email, { subject, text, html }) {
       `From: "Onkron Notifications" <${process.env.GMAIL_EMAIL}>\r\n`,
       `Reply-To: ${process.env.GMAIL_EMAIL}\r\n`,
       `To: ${email}\r\n`,
-      `Subject: ${subject}\r\n`,
+      `Subject: ${encodeSubject(subject)}\r\n`,
       'Message-ID: <' + Date.now() + Math.random().toString(36).substr(2, 9) + '@onkron.com>\r\n',
       'Date: ' + new Date().toUTCString() + '\r\n',
       'X-Priority: 1\r\n',
@@ -133,7 +134,7 @@ async function sendErrorNotification(subject, error) {
       'Content-Transfer-Encoding: 7bit\r\n',
       `From: "Onkron System" <${process.env.GMAIL_EMAIL}>\r\n`,
       `To: sparkygino@gmail.com\r\n`,
-      `Subject: ${subject}\r\n`,
+      `Subject: ${encodeSubject(subject)}\r\n`,
       '\r\n',
       `<h3>System Error Notification</h3>`,
       `<p><strong>Time:</strong> ${new Date().toISOString()}</p>`,

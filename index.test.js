@@ -153,6 +153,11 @@ test("creates a TR subscription and sends both notifications", async () => {
     "tr-store.myshopify.com",
   );
   expect(mockGmailSend).toHaveBeenCalledTimes(1);
+  const rawEmail = mockGmailSend.mock.calls[0][0].requestBody.raw;
+  const message = Buffer.from(rawEmail, "base64url").toString("utf8");
+  expect(message).toContain(
+    `Subject: =?UTF-8?B?${Buffer.from("Ürün stok bildirimi").toString("base64")}?=\r\n`,
+  );
 });
 
 test("rejects an unsupported country before writing to the database", async () => {
