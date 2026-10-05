@@ -355,22 +355,29 @@ app.get(
 
 app.post("/send-notification", async (req, res) => {
   const { email, sku, nickname, inventory_id, country } = req.body;
+  const normalizedCountry = String(country || "").trim().toUpperCase();
   const normalizedNickname =
     typeof nickname === "string" ? nickname.trim() : "";
 
-  if (country !== "DE" && !normalizedNickname) {
+  if (normalizedCountry !== "DE" && !normalizedNickname) {
     return res.status(400).json({ message: "Nickname is required" });
   }
 
   // В DE клиент запрашивает только email, поэтому используем нейтральное обращение.
   const subscriptionNickname = normalizedNickname || "Kunde";
-  console.log("Subscription request received", { country, sku });
-
-  const shopifyConfig = getShopifyConfig(country);
-  const emailTemplate = getSubscriptionConfirmationTemplate(country, {
-    nickname: subscriptionNickname,
+  console.log("Subscription request received", {
+    country: normalizedCountry,
     sku,
   });
+
+  const shopifyConfig = getShopifyConfig(normalizedCountry);
+  const emailTemplate = getSubscriptionConfirmationTemplate(
+    normalizedCountry,
+    {
+      nickname: subscriptionNickname,
+      sku,
+    },
+  );
 
   if (!shopifyConfig || !emailTemplate) {
     return res.status(400).json({ message: "Unsupported country" });
@@ -392,7 +399,12 @@ app.post("/send-notification", async (req, res) => {
 
   try {
     const existingSubscription = await Subscription.findOne({
-      where: { email, sku, country, notification_sent: false },
+      where: {
+        email,
+        sku,
+        country: normalizedCountry,
+        notification_sent: false,
+      },
     });
     if (existingSubscription) {
       return res
@@ -405,7 +417,7 @@ app.post("/send-notification", async (req, res) => {
       sku,
       nickname: subscriptionNickname,
       inventory_id,
-      country,
+      country: normalizedCountry,
       manager_notification_status: "pending",
     });
     await subscription.save();

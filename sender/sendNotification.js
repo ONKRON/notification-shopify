@@ -8,6 +8,7 @@ const sequelize = require("../config/database");
 const Subscription = require("../models/Subscription");
 const CronRun = require("../models/CronRun");
 const { getShopifyConfig } = require("../config/shopify");
+const { resolveShopifyAccessToken } = require("../services/shopifyAccessToken");
 const {
   getAvailabilityNotificationTemplate,
 } = require("../templates/availabilityNotification");
@@ -228,7 +229,7 @@ async function checkProductAvailability() {
         continue;
       }
 
-      const { shopifyStore, shopifyAccessToken, shopifyApiVersion } =
+      const { shopifyStore, shopifyApiVersion } =
         shopifyConfig;
       const { subject, text, html } = emailTemplate;
 
@@ -261,6 +262,7 @@ async function checkProductAvailability() {
       }
 
       try {
+        const shopifyAccessToken = await resolveShopifyAccessToken(shopifyConfig);
         const response = await fetchWithRetry(
           `https://${shopifyStore}/admin/api/${shopifyApiVersion}/products/${subscription.inventory_id}.json`,
           { "X-Shopify-Access-Token": shopifyAccessToken }

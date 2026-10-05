@@ -2,6 +2,10 @@ const axios = require("axios");
 const { fn, col, Op } = require("sequelize");
 const Subscription = require("../models/Subscription");
 const { getShopifyConfig } = require("../config/shopify");
+const {
+  hasShopifyCredentials,
+  resolveShopifyAccessToken,
+} = require("./shopifyAccessToken");
 
 const productCache = new Map();
 const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -41,7 +45,7 @@ async function fetchProductDetails(product) {
   }
 
   const shopifyConfig = getShopifyConfig(product.country);
-  if (!shopifyConfig?.shopifyStore || !shopifyConfig?.shopifyAccessToken) {
+  if (!shopifyConfig?.shopifyStore || !hasShopifyCredentials(shopifyConfig)) {
     const details = fallbackProduct(product);
     productCache.set(cacheKey, {
       details,
@@ -51,11 +55,12 @@ async function fetchProductDetails(product) {
   }
 
   try {
+    const shopifyAccessToken = await resolveShopifyAccessToken(shopifyConfig);
     const response = await axios.get(
       `https://${shopifyConfig.shopifyStore}/admin/api/${shopifyConfig.shopifyApiVersion}/products/${product.productId}.json`,
       {
         headers: {
-          "X-Shopify-Access-Token": shopifyConfig.shopifyAccessToken,
+          "X-Shopify-Access-Token": shopifyAccessToken,
         },
         timeout: 5000,
       },

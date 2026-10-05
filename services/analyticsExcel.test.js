@@ -28,6 +28,7 @@ const allWaitTimeBySku = [
 
 test("countryName maps known codes and falls back to the raw code", () => {
   expect(countryName("US")).toBe("США");
+  expect(countryName("TR")).toBe("Турция");
   expect(countryName("XX")).toBe("XX");
 });
 

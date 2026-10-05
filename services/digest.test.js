@@ -87,6 +87,28 @@ test("formatDigestMessage includes a new-subscriptions-this-week block", () => {
   expect(newBlock).toContain("TS1 - 3");
 });
 
+test("formatDigestMessage includes Turkey with its localized name and flag", () => {
+  const message = formatDigestMessage({
+    ...summary,
+    activeByCountry: [
+      ...summary.activeByCountry,
+      { country: "TR", count: "4" },
+    ],
+    topSkusByCountry: [
+      ...summary.topSkusByCountry,
+      { country: "TR", skus: [{ sku: "TS1881", totalCount: 4 }] },
+    ],
+    newSubscriptionsByCountry: [
+      ...summary.newSubscriptionsByCountry,
+      { country: "TR", skus: [{ sku: "TS1881", totalCount: 2 }] },
+    ],
+  });
+
+  expect(message).toContain("🇹🇷 Турция");
+  expect(message).toContain("TS1881 - 4");
+  expect(message).toContain("Итого активных подписок: 4");
+});
+
 test("formatDigestMessage flags an empty week when there are no new subscriptions", () => {
   const message = formatDigestMessage({ ...summary, newSubscriptionsByCountry: [] });
   expect(message).toContain("Новых подписок за 7 дней не было");

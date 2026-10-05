@@ -34,7 +34,7 @@ describe('checkProductAvailability', () => {
     
     const mockGetShopifyConfig = jest.fn(() => ({
       shopifyStore: process.env.SHOPIFY_US_STORE,
-      shopifyAccessToken: process.env.SHOPIFY_US_ACCESS_TOKEN,
+      shopifyAccessToken: 'us-test-token',
       subject: 'Product Notification',
       text: 'Your product is now available.',
       html: '<p>Your product is now available.</p>',

@@ -19,6 +19,7 @@ const COUNTRY_NAMES = {
   FR: "Франция",
   IT: "Италия",
   ES: "Испания",
+  TR: "Турция",
 };
 const countryName = (code) => COUNTRY_NAMES[code] || code;
 

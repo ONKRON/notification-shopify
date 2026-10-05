@@ -17,6 +17,11 @@ const envNames = [
   "SHOPIFY_DE_STORE",
   "SHOPIFY_DE_ACCESS_TOKEN",
   "SHOPIFY_DE_PUBLIC_URL",
+  "SHOPIFY_TR_STORE",
+  "SHOPIFY_TR_CLIENT_ID",
+  "SHOPIFY_TR_CLIENT_SECRET",
+  "SHOPIFY_TR_ACCESS_TOKEN",
+  "SHOPIFY_TR_PUBLIC_URL",
   "SHOPIFY_API_VERSION",
 ];
 const originalEnv = Object.fromEntries(
@@ -27,6 +32,7 @@ beforeEach(() => {
   clearProductCatalogCache();
   mockFindAll.mockReset();
   axios.get.mockReset();
+  axios.post.mockReset();
   process.env.SHOPIFY_DE_STORE = "de-store.myshopify.com";
   process.env.SHOPIFY_DE_ACCESS_TOKEN = "token";
   process.env.SHOPIFY_DE_PUBLIC_URL = "https://onkron.de";
@@ -133,6 +139,35 @@ test("enriches each unique product with its Shopify title and image", async () =
         }),
       ],
     }),
+  );
+});
+
+test("loads Turkish products using a client credentials token", async () => {
+  process.env.SHOPIFY_TR_STORE = "tr-store.myshopify.com";
+  process.env.SHOPIFY_TR_CLIENT_ID = "dashboard-client";
+  process.env.SHOPIFY_TR_CLIENT_SECRET = "dashboard-secret";
+  delete process.env.SHOPIFY_TR_ACCESS_TOKEN;
+  process.env.SHOPIFY_TR_PUBLIC_URL = "https://onkron.com.tr";
+  mockFindAll.mockResolvedValue([
+    { country: "TR", inventory_id: "200", sku: "STAND", subscription_count: "1" },
+  ]);
+  axios.post.mockResolvedValue({
+    data: { access_token: "tr-access-token", expires_in: 86399 },
+  });
+  axios.get.mockResolvedValue({
+    data: { product: { title: "TV Stand", handle: "tv-stand" } },
+  });
+
+  const dashboard = await getManagerDashboardData();
+
+  expect(axios.get).toHaveBeenCalledWith(
+    "https://tr-store.myshopify.com/admin/api/2025-10/products/200.json",
+    expect.objectContaining({
+      headers: { "X-Shopify-Access-Token": "tr-access-token" },
+    }),
+  );
+  expect(dashboard.countries[0].products[0].productUrl).toBe(
+    "https://onkron.com.tr/products/tv-stand",
   );
 });
 

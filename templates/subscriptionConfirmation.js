@@ -336,6 +336,21 @@ function getSubscriptionConfirmationTemplate(country, { nickname, sku }) {
           <p style="margin-top: 20px;text-align:right;">© 2025 Onkron ${country}</p>
   </div>`,
       };
+    case "TR":
+      return {
+        subject: "Ürün stok bildirimi",
+        text: `${sku} ürünü için stok bildirimi talebiniz alınmıştır. Ürün yeniden stokta olduğunda size e-posta göndereceğiz.`,
+        html: `<div style="font-family: Gilroy, Arial, sans-serif; text-align: center; width: 100%; max-width: 600px; margin: 0 auto;">
+      <img src="https://cdn.shopify.com/s/files/1/0558/2277/8562/files/logo.png?v=1622659938" alt="ONKRON" width="300" style="display: block; margin: 0 auto;"/>
+      <p style="margin-top: 20px;">Sayın <span style="color: #1fcfca;font-weight: 600;">${nickname}</span>,</p>
+      <p style="margin-top: 20px;"><strong>${sku}</strong> ürünü için stok bildirimi talebinizi aldık.</p>
+      <p>Ürün yeniden stokta olduğunda size e-posta ile haber vereceğiz.</p>
+      <p style="color: #1fcfca; margin-top: 30px;font-weight: 500;">ONKRON'u tercih ettiğiniz için teşekkür ederiz.</p>
+      <p style="margin-top: 20px;text-align: left;">Saygılarımızla<br>ONKRON Technologies</p>
+      <hr style="background-color: #1fcfca; height: 15px; border: none; width: 100%; max-width: 600px; margin: 30px auto;">
+      <p style="margin-top: 20px;text-align:right;">© 2026 ONKRON Türkiye</p>
+  </div>`,
+      };
     default:
       return null;
   }

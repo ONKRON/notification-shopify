@@ -34,6 +34,13 @@ const SHOPIFY_ENV_BY_COUNTRY = Object.freeze({
     accessToken: "SHOPIFY_ES_ACCESS_TOKEN",
     publicUrl: "SHOPIFY_ES_PUBLIC_URL",
   },
+  TR: {
+    store: "SHOPIFY_TR_STORE",
+    accessToken: "SHOPIFY_TR_ACCESS_TOKEN",
+    clientId: "SHOPIFY_TR_CLIENT_ID",
+    clientSecret: "SHOPIFY_TR_CLIENT_SECRET",
+    publicUrl: "SHOPIFY_TR_PUBLIC_URL",
+  },
 });
 
 function getShopifyConfig(country) {
@@ -48,13 +55,20 @@ function getShopifyConfig(country) {
   const publicUrl = process.env[envNames.publicUrl] ||
     (shopifyStore ? `https://${shopifyStore}` : null);
 
-  return {
+  const config = {
     country: normalizedCountry,
     shopifyStore,
     shopifyAccessToken: process.env[envNames.accessToken],
     shopifyApiVersion: process.env.SHOPIFY_API_VERSION || "2025-10",
     shopifyPublicUrl: publicUrl ? publicUrl.replace(/\/+$/, "") : null,
   };
+
+  if (envNames.clientId) {
+    config.shopifyClientId = process.env[envNames.clientId];
+    config.shopifyClientSecret = process.env[envNames.clientSecret];
+  }
+
+  return config;
 }
 
 module.exports = {

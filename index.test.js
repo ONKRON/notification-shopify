@@ -88,6 +88,7 @@ beforeEach(() => {
   mockDeliverManagerNotification.mockReset().mockResolvedValue(456);
   mockSubscriptionInstances.length = 0;
   process.env.SHOPIFY_DE_STORE = "de-store.myshopify.com";
+  process.env.SHOPIFY_TR_STORE = "tr-store.myshopify.com";
   process.env.MANAGER_AUTH_USER = "manager";
   process.env.MANAGER_AUTH_PASSWORD = "hunter2";
 });
@@ -118,6 +119,38 @@ test("creates a DE subscription without a nickname and sends both notifications"
   expect(mockDeliverManagerNotification).toHaveBeenCalledWith(
     mockSubscriptionInstances[0],
     "de-store.myshopify.com",
+  );
+  expect(mockGmailSend).toHaveBeenCalledTimes(1);
+});
+
+test("creates a TR subscription and sends both notifications", async () => {
+  const response = await request(app).post("/send-notification").send({
+    email: "musteri@example.com",
+    sku: "TS1881",
+    nickname: "Ahmet",
+    inventory_id: "987654",
+    country: "tr",
+  });
+
+  expect(response.status).toBe(200);
+  expect(mockFindOne).toHaveBeenCalledWith({
+    where: {
+      email: "musteri@example.com",
+      sku: "TS1881",
+      country: "TR",
+      notification_sent: false,
+    },
+  });
+  expect(mockSubscriptionInstances[0]).toEqual(
+    expect.objectContaining({
+      country: "TR",
+      nickname: "Ahmet",
+      manager_notification_status: "pending",
+    }),
+  );
+  expect(mockDeliverManagerNotification).toHaveBeenCalledWith(
+    mockSubscriptionInstances[0],
+    "tr-store.myshopify.com",
   );
   expect(mockGmailSend).toHaveBeenCalledTimes(1);
 });

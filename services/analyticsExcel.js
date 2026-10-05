@@ -8,6 +8,7 @@ const COUNTRY_NAMES = {
   FR: "Франция",
   IT: "Италия",
   ES: "Испания",
+  TR: "Турция",
 };
 
 function countryName(code) {

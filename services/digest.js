@@ -10,6 +10,7 @@ const COUNTRY_NAMES = {
   FR: "Франция",
   IT: "Италия",
   ES: "Испания",
+  TR: "Турция",
 };
 
 const COUNTRY_FLAGS = {
@@ -20,6 +21,7 @@ const COUNTRY_FLAGS = {
   FR: "🇫🇷",
   IT: "🇮🇹",
   ES: "🇪🇸",
+  TR: "🇹🇷",
 };
 
 function countryName(code) {

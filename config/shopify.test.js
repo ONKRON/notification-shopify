@@ -30,5 +30,38 @@ test("uses the existing unprefixed Shopify variables for the UK", () => {
 
 test("returns null for an unsupported country", () => {
   expect(getShopifyConfig("CA")).toBeNull();
-  expect(supportedCountries).toEqual(["US", "UK", "DE", "PL", "FR", "IT", "ES"]);
+  expect(supportedCountries).toEqual(["US", "UK", "DE", "PL", "FR", "IT", "ES", "TR"]);
+});
+
+test("uses the Turkey-specific Shopify variables", () => {
+  const envNames = [
+    "SHOPIFY_TR_STORE",
+    "SHOPIFY_TR_ACCESS_TOKEN",
+    "SHOPIFY_TR_CLIENT_ID",
+    "SHOPIFY_TR_CLIENT_SECRET",
+    "SHOPIFY_TR_PUBLIC_URL",
+  ];
+  const originalEnv = Object.fromEntries(
+    envNames.map((name) => [name, process.env[name]]),
+  );
+  process.env.SHOPIFY_TR_STORE = "tr-store.myshopify.com";
+  process.env.SHOPIFY_TR_ACCESS_TOKEN = "tr-token";
+  process.env.SHOPIFY_TR_CLIENT_ID = "tr-client-id";
+  process.env.SHOPIFY_TR_CLIENT_SECRET = "tr-client-secret";
+  process.env.SHOPIFY_TR_PUBLIC_URL = "https://onkron.com.tr/";
+
+  expect(getShopifyConfig("tr")).toEqual({
+    country: "TR",
+    shopifyStore: "tr-store.myshopify.com",
+    shopifyAccessToken: "tr-token",
+    shopifyClientId: "tr-client-id",
+    shopifyClientSecret: "tr-client-secret",
+    shopifyApiVersion: "2025-10",
+    shopifyPublicUrl: "https://onkron.com.tr",
+  });
+
+  for (const name of envNames) {
+    if (originalEnv[name] === undefined) delete process.env[name];
+    else process.env[name] = originalEnv[name];
+  }
 });

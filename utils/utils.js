@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { getShopifyConfig } = require('../config/shopify');
 const { isSubscribedVariantAvailable } = require('./productAvailability');
+const { resolveShopifyAccessToken } = require('../services/shopifyAccessToken');
 
 async function checkProductAvailability(subscriptions, sendNotification, getShopifyConfig) {
   try {
@@ -11,9 +12,10 @@ async function checkProductAvailability(subscriptions, sendNotification, getShop
         return;
       }
 
-      const { shopifyStore, shopifyAccessToken, shopifyApiVersion } = shopifyConfig;
+      const { shopifyStore, shopifyApiVersion } = shopifyConfig;
 
       try {
+        const shopifyAccessToken = await resolveShopifyAccessToken(shopifyConfig);
         const response = await axios.get(`https://${shopifyStore}/admin/api/${shopifyApiVersion || '2025-10'}/products/${subscription.inventory_id}.json`, {
           headers: { 'X-Shopify-Access-Token': shopifyAccessToken },
         });
