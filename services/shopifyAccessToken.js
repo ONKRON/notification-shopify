@@ -67,4 +67,29 @@ async function resolveShopifyAccessToken(config) {
   }
 }
 
-module.exports = { hasShopifyCredentials, resolveShopifyAccessToken };
+async function withShopifyAccessToken(config, request) {
+  const token = await resolveShopifyAccessToken(config);
+  try {
+    return await request(token);
+  } catch (error) {
+    if (
+      error.response?.status !== 401 ||
+      !config.shopifyClientId ||
+      !config.shopifyClientSecret
+    ) {
+      throw error;
+    }
+
+    const cacheKey = `${config.shopifyStore}:${config.shopifyClientId}`;
+    if (tokenCache.get(cacheKey)?.token === token) {
+      tokenCache.delete(cacheKey);
+    }
+    return request(await resolveShopifyAccessToken(config));
+  }
+}
+
+module.exports = {
+  hasShopifyCredentials,
+  resolveShopifyAccessToken,
+  withShopifyAccessToken,
+};

@@ -8,7 +8,7 @@ const sequelize = require("../config/database");
 const Subscription = require("../models/Subscription");
 const CronRun = require("../models/CronRun");
 const { getShopifyConfig } = require("../config/shopify");
-const { resolveShopifyAccessToken } = require("../services/shopifyAccessToken");
+const { withShopifyAccessToken } = require("../services/shopifyAccessToken");
 const {
   getAvailabilityNotificationTemplate,
 } = require("../templates/availabilityNotification");
@@ -194,6 +194,7 @@ async function fetchWithRetry(url, headers, retries = 3, delayMs = 5000) {
 
 async function checkProductAvailability() {
   const stats = { checked: 0, sent: 0, errors: 0 };
+  const unauthorizedStores = new Set();
   try {
     const maxManagerNotificationAttempts = getMaxNotificationAttempts();
     const subscriptions = await Subscription.findAll({
@@ -232,6 +233,7 @@ async function checkProductAvailability() {
 
       const { shopifyStore, shopifyApiVersion } =
         shopifyConfig;
+      const authorizationKey = `${subscription.country}:${shopifyStore}`;
       const { subject, text, html } = emailTemplate;
 
       const shouldRetryManagerNotification =
@@ -262,11 +264,17 @@ async function checkProductAvailability() {
         continue;
       }
 
+      if (unauthorizedStores.has(authorizationKey)) {
+        continue;
+      }
+
       try {
-        const shopifyAccessToken = await resolveShopifyAccessToken(shopifyConfig);
-        const response = await fetchWithRetry(
-          `https://${shopifyStore}/admin/api/${shopifyApiVersion}/products/${subscription.inventory_id}.json`,
-          { "X-Shopify-Access-Token": shopifyAccessToken }
+        const response = await withShopifyAccessToken(
+          shopifyConfig,
+          (shopifyAccessToken) => fetchWithRetry(
+            `https://${shopifyStore}/admin/api/${shopifyApiVersion}/products/${subscription.inventory_id}.json`,
+            { "X-Shopify-Access-Token": shopifyAccessToken },
+          ),
         );
 
         const product = response.data.product;
@@ -307,13 +315,19 @@ async function checkProductAvailability() {
         }
       } catch (error) {
         stats.errors += 1;
+        const status = error.response?.status;
+        if (status === 401) unauthorizedStores.add(authorizationKey);
+        const authMode = shopifyConfig.shopifyClientId && shopifyConfig.shopifyClientSecret
+          ? "client_credentials"
+          : "static_access_token";
+        const context = `country=${subscription.country}, store=${shopifyStore}, subscriptionId=${subscription.id}, productId=${subscription.inventory_id}, status=${status || "unknown"}, auth=${authMode}`;
         console.error(
-          `Error fetching product from ${subscription.country} for subscription ${subscription.inventory_id}:`,
+          `Error fetching Shopify product (${context}):`,
           error.message
         );
         await sendErrorNotification(
           `Error fetching product ${subscription.sku} from ${subscription.country}`,
-          error
+          { message: `${context}: ${error.message}`, stack: error.stack },
         );
       }
     }

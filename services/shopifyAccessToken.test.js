@@ -1,7 +1,10 @@
 jest.mock("axios");
 
 const axios = require("axios");
-const { resolveShopifyAccessToken } = require("./shopifyAccessToken");
+const {
+  resolveShopifyAccessToken,
+  withShopifyAccessToken,
+} = require("./shopifyAccessToken");
 
 const config = {
   shopifyStore: "tr-store.myshopify.com",
@@ -66,5 +69,39 @@ test("keeps static tokens for existing stores", async () => {
     shopifyStore: "de-store.myshopify.com",
     shopifyAccessToken: "de-token",
   })).toBe("de-token");
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test("refreshes a client credentials token once after Shopify returns 401", async () => {
+  const trConfig = { ...config, shopifyStore: "unauthorized.myshopify.com" };
+  axios.post
+    .mockResolvedValueOnce({ data: { access_token: "stale-token", expires_in: 86399 } })
+    .mockResolvedValueOnce({ data: { access_token: "fresh-token", expires_in: 86399 } });
+  const request = jest.fn(async (token) => {
+    if (token === "stale-token") {
+      const error = new Error("Unauthorized");
+      error.response = { status: 401 };
+      throw error;
+    }
+    return { data: { product: { id: 123 } } };
+  });
+
+  await expect(withShopifyAccessToken(trConfig, request)).resolves.toEqual({
+    data: { product: { id: 123 } },
+  });
+  expect(request.mock.calls).toEqual([["stale-token"], ["fresh-token"]]);
+  expect(axios.post).toHaveBeenCalledTimes(2);
+});
+
+test("does not exchange credentials for a static token after 401", async () => {
+  const error = new Error("Unauthorized");
+  error.response = { status: 401 };
+  const request = jest.fn().mockRejectedValue(error);
+
+  await expect(withShopifyAccessToken({
+    shopifyStore: "de-store.myshopify.com",
+    shopifyAccessToken: "de-token",
+  }, request)).rejects.toBe(error);
+  expect(request).toHaveBeenCalledTimes(1);
   expect(axios.post).not.toHaveBeenCalled();
 });

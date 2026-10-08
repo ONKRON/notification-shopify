@@ -4,7 +4,7 @@ const Subscription = require("../models/Subscription");
 const { getShopifyConfig } = require("../config/shopify");
 const {
   hasShopifyCredentials,
-  resolveShopifyAccessToken,
+  withShopifyAccessToken,
 } = require("./shopifyAccessToken");
 
 const productCache = new Map();
@@ -55,15 +55,17 @@ async function fetchProductDetails(product) {
   }
 
   try {
-    const shopifyAccessToken = await resolveShopifyAccessToken(shopifyConfig);
-    const response = await axios.get(
-      `https://${shopifyConfig.shopifyStore}/admin/api/${shopifyConfig.shopifyApiVersion}/products/${product.productId}.json`,
-      {
-        headers: {
-          "X-Shopify-Access-Token": shopifyAccessToken,
+    const response = await withShopifyAccessToken(
+      shopifyConfig,
+      (shopifyAccessToken) => axios.get(
+        `https://${shopifyConfig.shopifyStore}/admin/api/${shopifyConfig.shopifyApiVersion}/products/${product.productId}.json`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": shopifyAccessToken,
+          },
+          timeout: 5000,
         },
-        timeout: 5000,
-      },
+      ),
     );
     const shopifyProduct = response.data?.product;
     if (!shopifyProduct) throw new Error("Product was not returned by Shopify");
